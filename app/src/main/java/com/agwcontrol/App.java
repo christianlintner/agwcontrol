@@ -12,7 +12,7 @@ public class App {
 
     public static void main(String[] args) {
         if (args.length == 0) {
-            System.out.println("Usage: agwcontrol <ping>");
+            System.out.println("Usage: agwcontrol <ping|tcp>");
             return;
         }
 
@@ -20,9 +20,12 @@ public class App {
             case "ping":
                 runPing(Paths.get(CONFIG_FILE));
                 break;
+            case "tcp":
+                runTcpCheck(Paths.get(CONFIG_FILE));
+                break;
             default:
                 System.out.println("Unbekannter Befehl: " + args[0]);
-                System.out.println("Usage: agwcontrol <ping>");
+                System.out.println("Usage: agwcontrol <ping|tcp>");
         }
     }
 
@@ -47,5 +50,28 @@ public class App {
         }
 
         System.out.println(new PingResultFormatter().format(results));
+    }
+
+    static void runTcpCheck(Path configFile) {
+        List<ServerConfig> servers;
+        try {
+            servers = new ConfigLoader().load(configFile);
+        } catch (IOException e) {
+            System.err.println("Fehler: " + configFile + " nicht gefunden oder lesbar: " + e.getMessage());
+            return;
+        }
+
+        if (servers.isEmpty()) {
+            System.out.println("Keine Server in " + configFile + " konfiguriert.");
+            return;
+        }
+
+        TcpCheckService tcpService = new TcpCheckService();
+        List<TcpCheckResult> results = new ArrayList<>();
+        for (ServerConfig server : servers) {
+            results.add(tcpService.check(server));
+        }
+
+        System.out.println(new TcpCheckResultFormatter().format(results));
     }
 }
