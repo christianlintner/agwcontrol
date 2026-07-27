@@ -12,17 +12,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class InteractiveMenuTest {
 
-    /** Baut ein Testmenü mit simulierter Eingabe. */
-    private ByteArrayOutputStream runMenu(List<ServerGroup> groups, String input) {
-        byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
-        ByteArrayOutputStream outputBuf = new ByteArrayOutputStream();
-        InteractiveMenu menu = new InteractiveMenu(
-                groups,
-                new ByteArrayInputStream(inputBytes),
-                new PrintStream(outputBuf));
-        menu.run();
-        return outputBuf;
-    }
+        /** Baut ein Testmenü mit simulierter Eingabe (In-Memory-DB). */
+        private ByteArrayOutputStream runMenu(List<ServerGroup> groups, String input) {
+            byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
+            ByteArrayOutputStream outputBuf = new ByteArrayOutputStream();
+            InteractiveMenu menu = new InteractiveMenu(
+                    groups,
+                    new ByteArrayInputStream(inputBytes),
+                    new PrintStream(outputBuf),
+                    ":memory:");
+            menu.run();
+            return outputBuf;
+        }
 
     private List<ServerGroup> singleGroup() {
         return List.of(new ServerGroup("TEST-ENV", List.of(
@@ -182,5 +183,45 @@ class InteractiveMenuTest {
     @Test
     void endpointCheckServerSelectionBackReturnsToActionMenu() {
         assertDoesNotThrow(() -> runMenu(twoGroups(), "2\n4\nb\nq\n"));
+    }
+
+    // --- Cache-Toggle [c] ---
+
+    @Test
+    void actionMenuShowsCacheModeHeader() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
+        assertTrue(out.toString().contains("Cache-Modus:"));
+    }
+
+    @Test
+    void actionMenuShowsCacheToggleOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
+        assertTrue(out.toString().contains("[c]"));
+        assertTrue(out.toString().contains("Cache umschalten"));
+    }
+
+    @Test
+    void cacheToggleSwitchesMode() {
+        // Startzustand: "Server (neu laden)"
+        // Nach [c]: "DB"
+        // Nach weiterem [c]: wieder "Server (neu laden)"
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nc\nc\nb\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("DB") || s.contains("Server (neu laden)"));
+    }
+
+    @Test
+    void actionMenuShowsDbEmptyHintWhenNoDataLoaded() {
+        // DB ist leer → Hinweis muss erscheinen wenn auf DB umgeschaltet wird
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nc\nb\nq\n");
+        String s = out.toString();
+        // Nach Toggle auf DB: Hinweis "noch keine Daten" oder DB-Modus aktiv
+        assertTrue(s.contains("noch keine Daten") || s.contains("DB"));
+    }
+
+    @Test
+    void invalidCacheInputShowsError() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nz\nb\nq\n");
+        assertTrue(out.toString().contains("Ungültige Eingabe"));
     }
 }

@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -86,6 +87,77 @@ public class AgwApiService {
         } finally {
             conn.disconnect();
         }
+    }
+
+    /**
+     * Lädt die API-Liste – mit DB-Cache-Unterstützung.
+     *
+     * <p>Wenn {@code cache.isUseDbForApis()} true ist und die DB Daten enthält,
+     * werden diese zurückgegeben. Andernfalls wird vom Server geladen und
+     * die DB überschrieben. Das {@code cacheHint}-Array (Länge 1) wird mit
+     * {@code "DB"} oder {@code "Server"} befüllt, damit der Aufrufer eine
+     * Statusmeldung ausgeben kann.
+     *
+     * @param cacheHint Optional: String-Array der Länge 1, wird mit Quelle befüllt.
+     *                  Darf {@code null} sein.
+     */
+    public List<ApiInfo> listApis(ServerConfig server, String environment,
+                                   ApiDatabase db, DbCacheConfig cache,
+                                   String[] cacheHint) throws IOException {
+        if (cache.isUseDbForApis()) {
+            try {
+                List<ApiInfo> cached = db.loadApis(environment);
+                if (!cached.isEmpty()) {
+                    if (cacheHint != null) cacheHint[0] = "DB";
+                    return cached;
+                }
+            } catch (SQLException e) {
+                // DB-Fehler: Fallback auf Server
+            }
+            if (cacheHint != null) cacheHint[0] = "Cache leer – lade vom Server";
+        } else {
+            if (cacheHint != null) cacheHint[0] = "Server";
+        }
+        List<ApiInfo> result = listApis(server);
+        try {
+            db.saveApis(environment, result);
+        } catch (SQLException e) {
+            // Speicherfehler ignorieren – Ergebnis trotzdem zurückgeben
+        }
+        return result;
+    }
+
+    /**
+     * Lädt native Endpoints – mit DB-Cache-Unterstützung.
+     *
+     * @param cacheHint Optional: String-Array der Länge 1, wird mit Quelle befüllt.
+     *                  Darf {@code null} sein.
+     */
+    public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId,
+                                                     String environment,
+                                                     ApiDatabase db, DbCacheConfig cache,
+                                                     String[] cacheHint) throws IOException {
+        if (cache.isUseDbForEndpoints()) {
+            try {
+                List<RoutingEndpoint> cached = db.loadEndpoints(environment, apiId);
+                if (!cached.isEmpty()) {
+                    if (cacheHint != null) cacheHint[0] = "DB";
+                    return cached;
+                }
+            } catch (SQLException e) {
+                // DB-Fehler: Fallback auf Server
+            }
+            if (cacheHint != null) cacheHint[0] = "Cache leer – lade vom Server";
+        } else {
+            if (cacheHint != null) cacheHint[0] = "Server";
+        }
+        List<RoutingEndpoint> result = getNativeEndpoints(server, apiId);
+        try {
+            db.saveEndpoints(environment, apiId, result);
+        } catch (SQLException e) {
+            // Speicherfehler ignorieren
+        }
+        return result;
     }
 
     /** Ruft GET /rest/apigateway/apis auf und gibt die gefundenen APIs zurück. */
