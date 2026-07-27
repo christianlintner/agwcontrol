@@ -11,4 +11,4 @@ build
 agwcontrol.jar
 
 # Serverkonfiguration – enthält interne Hostnamen, nicht einchecken
-server.properties
+servers.properties
