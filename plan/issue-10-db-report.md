@@ -50,7 +50,9 @@ immer nur das **neueste** Ergebnis gespeichert bleibt (`INSERT OR REPLACE`).
 
 Pro Umgebung wird eine separate CSV-Datei erstellt:
 
-**Dateiname:** `report_<environment>.csv`  (z. B. `report_PROD.csv`, `report_TEST.csv`)
+**Dateiname:** `report_<environment>_<timestamp>.csv`
+Format: `report_PROD_20240601_100000.csv`
+Timestamp: Zeitpunkt der Report-Erstellung, Format `yyyyMMdd_HHmmss`
 **Encoding:** UTF-8
 **Trennzeichen:** Semikolon (`;`)
 **Felder mit Sonderzeichen** werden in doppelte Anführungszeichen eingeschlossen.
@@ -162,7 +164,8 @@ public class DbReportService {
 
     /**
      * Erstellt pro Umgebung eine CSV-Datei im angegebenen Verzeichnis.
-     * Dateiname: report_<environment>.csv
+     * Dateiname: report_<environment>_<yyyyMMdd_HHmmss>.csv
+     * Der Timestamp wird einmalig beim Aufruf gesetzt (gleich für alle Dateien).
      * Gibt die Anzahl der erstellten Dateien zurück.
      */
     int writeReports(Path outputDir) throws SQLException, IOException
@@ -205,7 +208,7 @@ Ablauf:
 3. `ApiDatabase` mit `db-path` öffnen + `initSchema()`
 4. `new DbReportService(db).writeReports(outputDir)` aufrufen
 5. Für jede erstellte Datei eine Bestätigungszeile ausgeben:
-   `Erstellt: report_PROD.csv (4 Zeilen)`
+   `Erstellt: report_PROD_20240601_100000.csv (4 Zeilen)`
 
 ---
 
