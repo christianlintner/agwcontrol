@@ -327,13 +327,25 @@ public class InteractiveMenu {
                     continue;
                 }
                 out.println(ts() + "  Prüfe Ping/TCP/HTTP für " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url + " ...");
-                EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
-                if (ep.isAlias()) {
-                    r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
-                            ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg(),
-                            r.isPingOk(), r.getPingMs(), r.isTcpOk(), r.getTcpMs());
+                try {
+                    EndpointCheckResult r = endpointCheckService.check(
+                            api.getName(), api.getVersion(),
+                            ep.isAlias() ? ep.getAliasName() : null,
+                            url,
+                            environment, api.getId(), server.getHost(),
+                            apiDatabase);
+                    results.add(r);
+                } catch (java.sql.SQLException e) {
+                    out.println(ts() + "  Warnung: Check-Ergebnis konnte nicht gespeichert werden: " + e.getMessage());
+                    // Ergebnis trotzdem anzeigen (ohne DB-Speicherung)
+                    EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
+                    if (ep.isAlias()) {
+                        r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
+                                ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg(),
+                                r.isPingOk(), r.getPingMs(), r.isTcpOk(), r.getTcpMs());
+                    }
+                    results.add(r);
                 }
-                results.add(r);
             }
         }
         out.println();
