@@ -107,4 +107,65 @@ class AgwApiServiceTest {
         ServerConfig server = new ServerConfig("vm40757.linux.oebb.at", 8443, "user", "pass", "");
         assertEquals("https://vm40757.linux.oebb.at:8443", service.resolveBaseUrl(server));
     }
+
+    // ---------------------------------------------------------------
+    // parseNativeEndpoints
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseNativeEndpointsEmptyWhenFieldAbsent() {
+        String json = "{\"apiResponse\":{\"api\":{},\"responseStatus\":\"SUCCESS\"}}";
+        assertTrue(service.parseNativeEndpoints(json).isEmpty());
+    }
+
+    @Test
+    void parseNativeEndpointsDirectUrl() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"https://backend:8080/service\",\"alias\":false,\"connectionTimeoutDuration\":0}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("https://backend:8080/service", eps.get(0).uri);
+        assertFalse(eps.get(0).alias);
+    }
+
+    @Test
+    void parseNativeEndpointsAliasTrue() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"MystageEndpoint\",\"alias\":true,\"connectionTimeoutDuration\":0}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("MystageEndpoint", eps.get(0).uri);
+        assertTrue(eps.get(0).alias);
+    }
+
+    @Test
+    void parseNativeEndpointsMultipleEntries() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"https://a:8080/svc\",\"alias\":false}," +
+                "{\"uri\":\"MyAlias\",\"alias\":true}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(2, eps.size());
+        assertFalse(eps.get(0).alias);
+        assertTrue(eps.get(1).alias);
+    }
+
+    // ---------------------------------------------------------------
+    // parseEndPointURI
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseEndPointURIFound() {
+        String json = "{\"id\":\"abc\",\"endPointURI\":\"https://myDevstage:9090\",\"name\":\"MystageEndpoint\",\"type\":\"endpoint\"}";
+        assertEquals("https://myDevstage:9090", service.parseEndPointURI(json));
+    }
+
+    @Test
+    void parseEndPointURIAbsent() {
+        String json = "{\"id\":\"abc\",\"name\":\"SomeAlias\",\"type\":\"simple\"}";
+        assertNull(service.parseEndPointURI(json));
+    }
+
 }

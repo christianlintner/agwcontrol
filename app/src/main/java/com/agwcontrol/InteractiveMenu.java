@@ -3,6 +3,8 @@ package com.agwcontrol;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
@@ -19,11 +21,19 @@ public class InteractiveMenu {
     private final TcpCheckResultFormatter tcpFormatter = new TcpCheckResultFormatter();
     private final AgwApiService agwApiService = new AgwApiService();
     private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
+    private final EndpointCheckService endpointCheckService = new EndpointCheckService();
+    private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
+
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out) {
         this.groups = groups;
         this.scanner = new Scanner(in);
         this.out = out;
+    }
+
+    private String ts() {
+        return "[" + LocalTime.now().format(TIME_FMT) + "] ";
     }
 
     public void run() {
@@ -81,6 +91,7 @@ public class InteractiveMenu {
             out.println("  [1]  Ping");
             out.println("  [2]  TCP-Check");
             out.println("  [3]  APIs auflisten");
+            out.println("  [4]  Endpoint-Check");
             out.println("  [b]  Zurück");
             out.println("  [q]  Beenden");
             out.print("Auswahl: ");
@@ -108,7 +119,17 @@ public class InteractiveMenu {
                 }
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [b] oder [q] eingeben.");
+            if ("4".equals(input)) {
+                ServerConfig server = selectServer(selected);
+                if (server != null) {
+                    ApiSelection sel = selectApis(server);
+                    if (sel != null) {
+                        runEndpointCheck(server, sel);
+                    }
+                }
+                return;
+            }
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [b] oder [q] eingeben.");
         }
     }
 
@@ -166,6 +187,113 @@ public class InteractiveMenu {
             }
             out.println("Ungültige Eingabe.");
         }
+    }
+
+    /**
+     * Zeigt die API-Liste (inkl. Routing-Endpoint-Name) und lässt den Nutzer eine oder alle auswählen.
+     * Gibt eine Liste mit einer API (Einzelwahl), die volle Liste ([a]) oder
+     * null bei Abbruch zurück.
+     */
+    /** Ergebnis der API-Auswahl: gewählte APIs. */
+    private static final class ApiSelection {
+        final List<ApiInfo> apis;
+
+        ApiSelection(List<ApiInfo> apis) {
+            this.apis = apis;
+        }
+    }
+
+    /**
+     * Schritt 1: Lädt API-Liste + native Endpoints (einmalig), zeigt Liste mit
+     * Routing-Endpoint-Label an, lässt den Nutzer eine oder alle auswählen.
+     * Gibt null zurück bei Abbruch.
+     */
+    private ApiSelection selectApis(ServerConfig server) {
+        out.println();
+        out.println("Lade API-Liste von " + server.getHost() + " ...");
+        List<ApiInfo> apis;
+        try {
+            apis = agwApiService.listApis(server);
+        } catch (IOException e) {
+            out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
+            return null;
+        }
+        if (apis.isEmpty()) {
+            out.println("Keine APIs gefunden.");
+            return null;
+        }
+
+        while (true) {
+            out.println();
+            out.println("API auswählen für " + server.getHost() + ":");
+            for (int i = 0; i < apis.size(); i++) {
+                ApiInfo a = apis.get(i);
+                out.printf("  [%d]  %-30s %-10s %s%n",
+                        i + 1, a.getName(), nullSafe(a.getVersion()), nullSafe(a.getType()));
+            }
+            out.println("  [a]  Alle APIs");
+            out.println("  [b]  Zurück");
+            out.print("Auswahl: ");
+
+            String input = scanner.nextLine().trim();
+            if ("b".equalsIgnoreCase(input)) {
+                return null;
+            }
+            if ("a".equalsIgnoreCase(input)) {
+                return new ApiSelection(apis);
+            }
+            int idx = parseIndex(input);
+            if (idx >= 1 && idx <= apis.size()) {
+                return new ApiSelection(List.of(apis.get(idx - 1)));
+            }
+            out.println("Ungültige Eingabe.");
+        }
+    }
+
+    /**
+     * Schritt 2: Lädt native Endpoints für die gewählten APIs (1 Request pro API),
+     * führt den HTTP-Check durch und gibt das Ergebnis aus.
+     */
+    private void runEndpointCheck(ServerConfig server, ApiSelection sel) {
+        List<EndpointCheckResult> results = new ArrayList<>();
+        for (ApiInfo api : sel.apis) {
+            out.println(ts() + "Lade nativen Endpoint für " + api.getName() + " ...");
+            List<RoutingEndpoint> endpoints;
+            try {
+                endpoints = agwApiService.getNativeEndpoints(server, api.getId());
+            } catch (IOException e) {
+                out.println(ts() + "  Fehler: " + e.getMessage());
+                continue;
+            }
+            if (endpoints.isEmpty()) {
+                out.println(ts() + "  Kein nativer Endpoint gefunden.");
+                continue;
+            }
+            for (RoutingEndpoint ep : endpoints) {
+                String url = ep.getResolvedUrl();
+                if (url == null || url.isEmpty()) {
+                    out.println(ts() + "  Alias '" + ep.getAliasName() + "' konnte nicht aufgelöst werden.");
+                    continue;
+                }
+                out.println(ts() + "  Prüfe " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url + " ...");
+                EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
+                if (ep.isAlias()) {
+                    r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
+                            ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg());
+                }
+                results.add(r);
+            }
+        }
+        out.println();
+        if (results.isEmpty()) {
+            out.println("Keine Endpoints gefunden.");
+            return;
+        }
+        out.println(endpointCheckFormatter.format(server.getHost(), results));
+    }
+
+    private String nullSafe(String s) {
+        return s != null ? s : "";
     }
 
     private void runApiList(ServerConfig server) {

@@ -152,4 +152,35 @@ class InteractiveMenuTest {
         // Kein Absturz, Menü bleibt bedienbar
         assertDoesNotThrow(() -> runMenu(twoGroups(), "2\n3\nb\nq\n"));
     }
+
+    // --- Option [4] Endpoint-Check ---
+
+    @Test
+    void actionMenuShowsEndpointCheckOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
+        assertTrue(out.toString().contains("Endpoint-Check"));
+    }
+
+    @Test
+    void endpointCheckActionWithUnreachableServerShowsError() {
+        // Port 1 garantiert nicht erreichbar → Fehler beim API-Laden
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenu(groups, "1\n4\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Fehler") || s.contains("Keine APIs") || s.contains("Keine Endpoints"));
+    }
+
+    @Test
+    void endpointCheckWithMultipleServersShowsServerSelectionMenu() {
+        // Gruppe mit 2 Servern → [4] → Server-Auswahlmenü muss erscheinen → b → q
+        ByteArrayOutputStream out = runMenu(twoGroups(), "2\n4\nb\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Server auswählen") || s.contains("127.0.0.1"));
+    }
+
+    @Test
+    void endpointCheckServerSelectionBackReturnsToActionMenu() {
+        assertDoesNotThrow(() -> runMenu(twoGroups(), "2\n4\nb\nq\n"));
+    }
 }
