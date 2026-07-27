@@ -184,12 +184,13 @@ class DbReportServiceTest {
         db.saveEndpoints("TEST", "id-2", List.of(RoutingEndpoint.direct("https://t/api")));
 
         int created = service.writeReports(tmpDir);
-        assertEquals(2, created);
+        // 2 Env-Dateien + 1 Cross-Env-Datei
+        assertEquals(3, created);
 
         long csvFiles = Files.list(tmpDir)
             .filter(p -> p.getFileName().toString().endsWith(".csv"))
             .count();
-        assertEquals(2, csvFiles);
+        assertEquals(3, csvFiles);
     }
 
     @Test
@@ -215,10 +216,105 @@ class DbReportServiceTest {
 
         service.writeReports(tmpDir);
 
-        Path csvFile = Files.list(tmpDir).findFirst().orElseThrow();
+        Path csvFile = Files.list(tmpDir)
+            .filter(p -> p.getFileName().toString().startsWith("report_PROD_"))
+            .findFirst().orElseThrow();
         String content = Files.readString(csvFile);
         assertTrue(content.startsWith(DbReportService.HEADER));
         assertTrue(content.contains("KundenAPI"));
+    }
+
+    // ---------------------------------------------------------------
+    // Cross-Environment Report
+    // ---------------------------------------------------------------
+
+    @Test
+    void crossEnvHeaderContainsAllEnvironments() throws SQLException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Payments API", "v1", "REST", true)));
+        db.saveEndpoints("DN2020-DEV",     "id-1", List.of(RoutingEndpoint.alias("gw1", "https://dev-gw1/pay")));
+        db.saveEndpoints("DN2020-PreProd", "id-2", List.of(RoutingEndpoint.alias("gw1", "https://preprod-gw1/pay")));
+
+        String csv = service.buildCrossEnvCsv();
+        String headerLine = csv.lines().findFirst().orElse("");
+
+        assertTrue(headerLine.startsWith(DbReportService.CROSS_ENV_HEADER_PREFIX));
+        assertTrue(headerLine.contains("DN2020-DEV_alias_name"),     "Header muss DN2020-DEV_alias_name enthalten");
+        assertTrue(headerLine.contains("DN2020-DEV_endpoint_url"),   "Header muss DN2020-DEV_endpoint_url enthalten");
+        assertTrue(headerLine.contains("DN2020-PreProd_alias_name"), "Header muss DN2020-PreProd_alias_name enthalten");
+        assertTrue(headerLine.contains("DN2020-PreProd_endpoint_url"));
+    }
+
+    @Test
+    void crossEnvOneRowPerApi() throws SQLException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Payments API", "v1", "REST", true)));
+        db.saveEndpoints("DN2020-DEV",     "id-1", List.of(RoutingEndpoint.alias("gw1", "https://dev-gw1/pay")));
+        db.saveEndpoints("DN2020-PreProd", "id-2", List.of(RoutingEndpoint.alias("gw1", "https://preprod-gw1/pay")));
+
+        EndpointCheckResult r1 = new EndpointCheckResult(
+            "Payments API", "v1", "gw1", "https://dev-gw1/pay",
+            200, true, null, true, 10L, true, 5L);
+        EndpointCheckResult r2 = new EndpointCheckResult(
+            "Payments API", "v1", "gw1", "https://preprod-gw1/pay",
+            200, true, null, true, 12L, true, 6L);
+        db.saveCheckResult("DN2020-DEV",     "id-1", "vm01", r1);
+        db.saveCheckResult("DN2020-PreProd", "id-2", "vm02", r2);
+
+        String csv = service.buildCrossEnvCsv();
+        long dataLines = csv.lines().count() - 1;
+        assertEquals(1, dataLines, "Es muss genau eine Datenzeile geben");
+
+        String dataLine = csv.lines().skip(1).findFirst().orElse("");
+        assertTrue(dataLine.contains("https://dev-gw1/pay"),     "DEV-URL muss in der Zeile stehen");
+        assertTrue(dataLine.contains("https://preprod-gw1/pay"), "PreProd-URL muss in der Zeile stehen");
+    }
+
+    @Test
+    void crossEnvEmptyColumnsForMissingEnvironment() throws SQLException {
+        // DN2020-PreProd muss über eine andere API bekannt sein, damit loadEnvironments() sie liefert
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-x", "Other API",    "v1", "REST", true)));
+        db.saveEndpoints("DN2020-DEV", "id-1", List.of(RoutingEndpoint.alias("gw1", "https://dev-gw1/pay")));
+        // Kein Endpoint für Payments API in DN2020-PreProd
+
+        EndpointCheckResult r = new EndpointCheckResult(
+            "Payments API", "v1", "gw1", "https://dev-gw1/pay",
+            200, true, null, true, 10L, true, 5L);
+        db.saveCheckResult("DN2020-DEV", "id-1", "vm01", r);
+
+        String csv = service.buildCrossEnvCsv();
+        String dataLine = csv.lines()
+            .skip(1)
+            .filter(l -> l.startsWith("Payments API"))
+            .findFirst().orElse("");
+
+        // Header: 4 feste Felder + 10 pro Env (2 Envs) = 24 Felder → 23 Semikola
+        String[] cols = dataLine.split(";", -1);
+        assertEquals(24, cols.length, "Zeile muss 24 Felder haben (4 + 2×10)");
+
+        // DN2020-PreProd-Block (Index 14–23) muss leer sein
+        for (int i = 14; i < 24; i++) {
+            assertEquals("", cols[i], "Feld " + i + " (PreProd-Block) muss leer sein");
+        }
+    }
+
+    @Test
+    void writeReportsCreatesCrossEnvFile(@TempDir Path tmpDir) throws SQLException, IOException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Api", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Api", "v1", "REST", true)));
+        db.saveEndpoints("DN2020-DEV",     "id-1", List.of(RoutingEndpoint.direct("https://dev/api")));
+        db.saveEndpoints("DN2020-PreProd", "id-2", List.of(RoutingEndpoint.direct("https://preprod/api")));
+
+        int created = service.writeReports(tmpDir);
+
+        // 2 Env-Dateien + 1 Cross-Env-Datei
+        assertEquals(3, created);
+
+        boolean found = Files.list(tmpDir)
+            .map(p -> p.getFileName().toString())
+            .anyMatch(name -> name.startsWith("report_all_environments_") && name.endsWith(".csv"));
+        assertTrue(found, "report_all_environments_*.csv muss erstellt worden sein");
     }
 
     // ---------------------------------------------------------------

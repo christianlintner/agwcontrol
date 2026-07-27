@@ -7,10 +7,7 @@ import java.nio.file.Path;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 /**
  * Erstellt pro Umgebung eine CSV-Datei aus den in der DB gespeicherten
@@ -24,6 +21,9 @@ public class DbReportService {
     static final String HEADER =
         "api_name;api_version;api_type;api_active;alias_name;endpoint_url;" +
         "server_host;ping_ok;ping_ms;tcp_ok;tcp_ms;http_status;reachable;error_msg;checked_at";
+
+    static final String CROSS_ENV_HEADER_PREFIX =
+        "api_name;api_version;api_type;api_active";
 
     private static final DateTimeFormatter TIMESTAMP_FMT =
         DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
@@ -53,6 +53,13 @@ public class DbReportService {
             System.out.println("Erstellt: " + filename + " (" + lines + " Zeilen)");
             count++;
         }
+        String crossEnvCsv = buildCrossEnvCsv();
+        String crossEnvFilename = "report_all_environments_" + ts + ".csv";
+        Path crossEnvFile = outputDir.resolve(crossEnvFilename);
+        Files.writeString(crossEnvFile, crossEnvCsv, StandardCharsets.UTF_8);
+        long crossEnvLines = crossEnvCsv.lines().count() - 1;
+        System.out.println("Erstellt: " + crossEnvFilename + " (" + crossEnvLines + " Zeilen)");
+        count++;
         return count;
     }
 
@@ -157,6 +164,124 @@ public class DbReportService {
             }
         }
         return result;
+    }
+
+    /**
+     * Erstellt den Cross-Env-CSV-Inhalt: eine Zeile pro API (api_name + api_version),
+     * pro Umgebung ein Spaltenblock mit alias_name, endpoint_url und 8 Check-Feldern.
+     * Hat eine API in einer Umgebung mehrere Endpoints, wird nur der erste verwendet.
+     */
+    public String buildCrossEnvCsv() throws SQLException {
+        List<String> envs = db.loadEnvironments();
+
+        // Header aufbauen
+        StringBuilder header = new StringBuilder(CROSS_ENV_HEADER_PREFIX);
+        for (String env : envs) {
+            header.append(";").append(env).append("_alias_name");
+            header.append(";").append(env).append("_endpoint_url");
+            header.append(";").append(env).append("_ping_ok");
+            header.append(";").append(env).append("_ping_ms");
+            header.append(";").append(env).append("_tcp_ok");
+            header.append(";").append(env).append("_tcp_ms");
+            header.append(";").append(env).append("_http_status");
+            header.append(";").append(env).append("_reachable");
+            header.append(";").append(env).append("_error_msg");
+            header.append(";").append(env).append("_checked_at");
+        }
+
+        // Pivot-Map: rowKey (api_name|api_version) → (env → PivotEntry)
+        // LinkedHashMap behält Einfügereihenfolge; wir sortieren am Ende.
+        Map<String, Map<String, PivotEntry>> pivot = new LinkedHashMap<>();
+        // Für die Sortierung merken wir uns den ApiInfo je rowKey.
+        Map<String, ApiInfo> apiByKey = new LinkedHashMap<>();
+
+        for (String env : envs) {
+            List<ApiInfo> apis = db.loadApis(env);
+            for (ApiInfo api : apis) {
+                String rowKey = api.getName() + "|" + api.getVersion();
+                apiByKey.putIfAbsent(rowKey, api);
+
+                List<RoutingEndpoint> endpoints = db.loadEndpoints(env, api.getId());
+                if (endpoints.isEmpty()) continue;
+
+                RoutingEndpoint firstEp = endpoints.get(0);
+                String url = firstEp.getResolvedUrl();
+
+                // ersten passenden Check-Eintrag für diese URL suchen
+                CheckRow matchingCheck = null;
+                for (CheckRow cr : loadCheckRows(env, api.getId())) {
+                    if (url.equals(cr.resolvedUrl)) {
+                        matchingCheck = cr;
+                        break;
+                    }
+                }
+
+                PivotEntry entry = new PivotEntry();
+                entry.aliasName  = firstEp.isAlias() ? firstEp.getAliasName() : null;
+                entry.endpointUrl = url;
+                entry.check      = matchingCheck;
+
+                pivot.computeIfAbsent(rowKey, k -> new LinkedHashMap<>()).put(env, entry);
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(header).append("\n");
+
+        if (pivot.isEmpty()) {
+            sb.append("(keine Daten vorhanden)\n");
+            return sb.toString();
+        }
+
+        // Zeilen nach api_name + api_version sortiert ausgeben
+        List<String> sortedKeys = new ArrayList<>(pivot.keySet());
+        sortedKeys.sort(Comparator.naturalOrder());
+
+        for (String rowKey : sortedKeys) {
+            ApiInfo api = apiByKey.get(rowKey);
+            Map<String, PivotEntry> envMap = pivot.get(rowKey);
+
+            StringBuilder row = new StringBuilder();
+            row.append(csvField(api.getName())).append(";");
+            row.append(csvField(api.getVersion())).append(";");
+            row.append(csvField(api.getType())).append(";");
+            row.append(api.isActive());
+
+            for (String env : envs) {
+                PivotEntry e = envMap.get(env);
+                if (e == null) {
+                    // 10 leere Felder
+                    row.append(";;;;;;;;;;");
+                } else {
+                    row.append(";").append(csvField(e.aliasName));
+                    row.append(";").append(csvField(e.endpointUrl));
+                    if (e.check == null) {
+                        // endpoint_url befüllt, 8 Check-Felder leer
+                        row.append(";;;;;;;;");
+                    } else {
+                        row.append(";").append(e.check.pingOk);
+                        row.append(";").append(e.check.pingMs);
+                        row.append(";").append(e.check.tcpOk);
+                        row.append(";").append(e.check.tcpMs);
+                        row.append(";").append(e.check.httpStatus);
+                        row.append(";").append(e.check.reachable);
+                        row.append(";").append(csvField(e.check.errorMsg));
+                        row.append(";").append(csvField(e.check.checkedAt));
+                    }
+                }
+            }
+            row.append("\n");
+            sb.append(row);
+        }
+
+        return sb.toString();
+    }
+
+    /** Hilfsklasse für einen Env-Spaltenblock im Cross-Env-Report. */
+    private static class PivotEntry {
+        String aliasName;
+        String endpointUrl;
+        CheckRow check;
     }
 
     /** Umschließt Felder mit Sonderzeichen (; " \n) in Anführungszeichen. */

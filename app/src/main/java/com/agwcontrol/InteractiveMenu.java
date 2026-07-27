@@ -362,10 +362,12 @@ public class InteractiveMenu {
         String dirInput = scanner.nextLine().trim();
         java.nio.file.Path outputDir = java.nio.file.Path.of(dirInput.isEmpty() ? "." : dirInput);
         try {
-            int created = new DbReportService(apiDatabase).writeReports(outputDir);
-            if (created == 0) {
+            boolean hasData = !apiDatabase.loadEnvironments().isEmpty();
+            if (!hasData) {
                 out.println("Keine Daten in der Datenbank. Bitte zuerst APIs und Endpoints laden.");
+                return;
             }
+            new DbReportService(apiDatabase).writeReports(outputDir);
         } catch (java.sql.SQLException | java.io.IOException e) {
             out.println("Fehler beim Report: " + e.getMessage());
         }
