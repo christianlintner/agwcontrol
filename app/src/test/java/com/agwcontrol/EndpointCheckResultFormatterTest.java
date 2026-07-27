@@ -43,11 +43,13 @@ class EndpointCheckResultFormatterTest {
     }
 
     @Test
-    void singleApiReachableShowsJa() {
+    void singleApiReachableShowsOkWithStatus() {
         List<EndpointCheckResult> results = List.of(
                 new EndpointCheckResult("MyAPI", "1.0",
                         "http://host/ep", 200, true, ""));
-        assertTrue(formatter.format("srv", results).contains("JA"));
+        String out = formatter.format("srv", results);
+        assertTrue(out.contains("OK (200)"));
+        assertTrue(out.contains("HTTP Status"));
     }
 
     @Test
@@ -56,18 +58,25 @@ class EndpointCheckResultFormatterTest {
                 new EndpointCheckResult("MyAPI", "1.0",
                         "http://host/ep", 0, false, "Connection refused"));
         String out = formatter.format("srv", results);
-        assertTrue(out.contains("NEIN"));
-        assertTrue(out.contains("Connection refused"));
+        assertTrue(out.contains("FAIL (Connection refused)"));
+    }
+
+    @Test
+    void singleApiUnreachableNoErrorShowsNein() {
+        List<EndpointCheckResult> results = List.of(
+                new EndpointCheckResult("MyAPI", "1.0",
+                        "http://host/ep", 0, false, ""));
+        assertTrue(formatter.format("srv", results).contains("FAIL"));
     }
 
     @Test
     void singleApiSummaryLineCorrect() {
+        // pingOk=false, tcpOk=false → isOk=false; beide nicht OK
         List<EndpointCheckResult> results = List.of(
                 new EndpointCheckResult("A", "1", "http://a/e1", 200, true, ""),
                 new EndpointCheckResult("A", "1", "http://a/e2", 0, false, "timeout"));
         String out = formatter.format("srv", results);
-        assertTrue(out.contains("2 Endpoints geprüft"));
-        assertTrue(out.contains("1 erreichbar"));
+        assertTrue(out.contains("Ergebnis: 0/2 OK"));
     }
 
     // ---------------------------------------------------------------
@@ -78,7 +87,7 @@ class EndpointCheckResultFormatterTest {
     void multiApiHeaderShowsAlleApis() {
         List<EndpointCheckResult> results = List.of(
                 new EndpointCheckResult("CustomerAPI", "v1", "http://a/e1", 200, true, ""),
-                new EndpointCheckResult("OrderService", "v2", "http://a/e2", 404, false, ""));
+                new EndpointCheckResult("OrderService", "v2", "http://a/e2", 404, true, ""));
         String out = formatter.format("agw.server.com", results);
         assertTrue(out.contains("alle APIs"));
         assertTrue(out.contains("agw.server.com"));
@@ -88,7 +97,7 @@ class EndpointCheckResultFormatterTest {
     void multiApiTableHasApiColumn() {
         List<EndpointCheckResult> results = List.of(
                 new EndpointCheckResult("CustomerAPI", "v1", "http://a/e1", 200, true, ""),
-                new EndpointCheckResult("OrderService", "v2", "http://a/e2", 404, false, ""));
+                new EndpointCheckResult("OrderService", "v2", "http://a/e2", 404, true, ""));
         String out = formatter.format("srv", results);
         // Tabellenheader muss "API" enthalten
         assertTrue(out.contains("API"));
@@ -106,12 +115,47 @@ class EndpointCheckResultFormatterTest {
 
     @Test
     void multiApiSummaryCorrect() {
+        // Alle ohne Ping/TCP → isOk=false für alle
         List<EndpointCheckResult> results = List.of(
                 new EndpointCheckResult("A", "1", "http://a/e1", 200, true, ""),
                 new EndpointCheckResult("B", "2", "http://b/e1", 0, false, "err"),
-                new EndpointCheckResult("C", "3", "http://c/e1", 503, false, ""));
+                new EndpointCheckResult("C", "3", "http://c/e1", 503, true, ""));
         String out = formatter.format("srv", results);
-        assertTrue(out.contains("3 Endpoints geprüft"));
-        assertTrue(out.contains("1 erreichbar"));
+        assertTrue(out.contains("Ergebnis: 0/3 OK"));
+    }
+
+    @Test
+    void summaryCountsAllThreeChecks() {
+        // pingOk=true, tcpOk=true, reachable=true → isOk=true
+        EndpointCheckResult ok = new EndpointCheckResult(
+                "A", "1", null, "http://a/e1", 200, true, "",
+                true, 5L, true, 3L);
+        // pingOk=false → isOk=false
+        EndpointCheckResult fail = new EndpointCheckResult(
+                "A", "1", null, "http://a/e2", 200, true, "",
+                false, -1L, true, 3L);
+        String out = formatter.format("srv", List.of(ok, fail));
+        assertTrue(out.contains("Ergebnis: 1/2 OK"));
+    }
+
+    @Test
+    void pingTcpColumnsAppearsWhenPresent() {
+        EndpointCheckResult r = new EndpointCheckResult(
+                "A", "1", null, "http://a/e1", 200, true, "",
+                true, 12L, true, 8L);
+        String out = formatter.format("srv", List.of(r));
+        assertTrue(out.contains("Ping"));
+        assertTrue(out.contains("TCP"));
+        assertTrue(out.contains("OK 12ms"));
+        assertTrue(out.contains("OPEN 8ms"));
+    }
+
+    @Test
+    void pingTcpColumnsAbsentWhenDefault() {
+        // Kein Ping/TCP gesetzt (alle -1/false) → Spalten sollen nicht erscheinen
+        EndpointCheckResult r = new EndpointCheckResult("A", "1", "http://a/e1", 200, true, "");
+        String out = formatter.format("srv", List.of(r));
+        assertFalse(out.contains("Ping"));
+        assertFalse(out.contains("TCP"));
     }
 }
