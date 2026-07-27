@@ -4,6 +4,7 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
 
 /**
  * Lokale SQLite-Datenbank (Single-File) für APIs und Endpoints pro Umgebung.
@@ -52,6 +53,24 @@ public class ApiDatabase {
                 "  is_alias     INTEGER," +
                 "  loaded_at    TEXT NOT NULL," +
                 "  PRIMARY KEY (environment, api_id, alias_name, resolved_url)" +
+                ")"
+            );
+            stmt.executeUpdate(
+                "CREATE TABLE IF NOT EXISTS endpoint_check_results (" +
+                "  environment  TEXT NOT NULL," +
+                "  api_id       TEXT NOT NULL," +
+                "  server_host  TEXT NOT NULL," +
+                "  resolved_url TEXT NOT NULL," +
+                "  alias_name   TEXT," +
+                "  ping_ok      INTEGER NOT NULL," +
+                "  ping_ms      INTEGER NOT NULL," +
+                "  tcp_ok       INTEGER NOT NULL," +
+                "  tcp_ms       INTEGER NOT NULL," +
+                "  http_status  INTEGER NOT NULL," +
+                "  reachable    INTEGER NOT NULL," +
+                "  error_msg    TEXT," +
+                "  checked_at   TEXT NOT NULL," +
+                "  PRIMARY KEY (environment, api_id, server_host, resolved_url)" +
                 ")"
             );
         }
@@ -184,8 +203,109 @@ public class ApiDatabase {
     }
 
     // ---------------------------------------------------------------
+    // Environments
+    // ---------------------------------------------------------------
+
+    /**
+     * Gibt alle Umgebungen zurück, für die APIs in der DB gespeichert sind.
+     * Sortiert alphabetisch.
+     */
+    public List<String> loadEnvironments() throws SQLException {
+        String sql = "SELECT DISTINCT environment FROM apis ORDER BY environment";
+        List<String> result = new ArrayList<>();
+        Connection conn = connect();
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                result.add(rs.getString("environment"));
+            }
+        }
+        return Collections.unmodifiableList(result);
+    }
+
+    // ---------------------------------------------------------------
+    // Check-Ergebnisse
+    // ---------------------------------------------------------------
+
+    /**
+     * Speichert ein Endpoint-Check-Ergebnis.
+     * Vorhandener Eintrag für dieselbe Kombination (environment, api_id,
+     * server_host, resolved_url) wird überschrieben (INSERT OR REPLACE).
+     */
+    public void saveCheckResult(String environment, String apiId,
+                                String serverHost, EndpointCheckResult result) throws SQLException {
+        String sql =
+            "INSERT OR REPLACE INTO endpoint_check_results " +
+            "(environment, api_id, server_host, resolved_url, alias_name, " +
+            " ping_ok, ping_ms, tcp_ok, tcp_ms, http_status, reachable, error_msg, checked_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        Connection conn = connect();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, environment);
+            ps.setString(2, apiId);
+            ps.setString(3, serverHost);
+            ps.setString(4, result.getUrl());
+            ps.setString(5, result.getAliasName());
+            ps.setInt(6, result.isPingOk() ? 1 : 0);
+            ps.setLong(7, result.getPingMs());
+            ps.setInt(8, result.isTcpOk() ? 1 : 0);
+            ps.setLong(9, result.getTcpMs());
+            ps.setInt(10, result.getHttpStatus());
+            ps.setInt(11, result.isReachable() ? 1 : 0);
+            ps.setString(12, result.getErrorMsg());
+            ps.setString(13, Instant.now().toString());
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Lädt alle gespeicherten Check-Ergebnisse für eine Umgebung und API.
+     * Gibt eine leere Liste zurück wenn keine Daten vorhanden.
+     */
+    public List<EndpointCheckResult> loadCheckResults(String environment,
+                                                       String apiId) throws SQLException {
+        String sql =
+            "SELECT resolved_url, alias_name, ping_ok, ping_ms, tcp_ok, tcp_ms, " +
+            "       http_status, reachable, error_msg " +
+            "FROM endpoint_check_results " +
+            "WHERE environment = ? AND api_id = ?";
+        List<EndpointCheckResult> result = new ArrayList<>();
+        Connection conn = connect();
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, environment);
+            ps.setString(2, apiId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    result.add(new EndpointCheckResult(
+                        null,
+                        null,
+                        rs.getString("alias_name"),
+                        rs.getString("resolved_url"),
+                        rs.getInt("http_status"),
+                        rs.getInt("reachable") == 1,
+                        rs.getString("error_msg"),
+                        rs.getInt("ping_ok") == 1,
+                        rs.getLong("ping_ms"),
+                        rs.getInt("tcp_ok") == 1,
+                        rs.getLong("tcp_ms")
+                    ));
+                }
+            }
+        }
+        return result;
+    }
+
+    // ---------------------------------------------------------------
     // Hilfsmethoden
     // ---------------------------------------------------------------
+
+    /**
+     * Package-private: gibt die persistente Verbindung zurück.
+     * Wird von {@link DbReportService} für direkte Abfragen verwendet.
+     */
+    synchronized Connection openConnection() throws SQLException {
+        return connect();
+    }
 
     /** Gibt die persistente Verbindung zurück, öffnet sie bei Bedarf. */
     private synchronized Connection connect() throws SQLException {

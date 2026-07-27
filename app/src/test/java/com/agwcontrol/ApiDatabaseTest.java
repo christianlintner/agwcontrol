@@ -134,4 +134,112 @@ class ApiDatabaseTest {
         List<RoutingEndpoint> loaded = db.loadEndpoints("PROD", "id-1");
         assertEquals(2, loaded.size());
     }
+
+    // ---------------------------------------------------------------
+    // Environments
+    // ---------------------------------------------------------------
+
+    @Test
+    void loadEnvironmentsReturnsDistinctSorted() throws SQLException {
+        db.saveApis("PROD", List.of(new ApiInfo("id-1", "ApiA", "1.0", "REST", true)));
+        db.saveApis("DEV",  List.of(new ApiInfo("id-2", "ApiB", "1.0", "REST", true)));
+        db.saveApis("TEST", List.of(new ApiInfo("id-3", "ApiC", "1.0", "REST", true)));
+        // PROD noch einmal – darf nur einmal erscheinen
+        db.saveApis("PROD", List.of(new ApiInfo("id-4", "ApiD", "1.0", "REST", true)));
+
+        List<String> envs = db.loadEnvironments();
+        assertEquals(List.of("DEV", "PROD", "TEST"), envs);
+    }
+
+    @Test
+    void loadEnvironmentsEmptyWhenNoData() throws SQLException {
+        assertTrue(db.loadEnvironments().isEmpty());
+    }
+
+    // ---------------------------------------------------------------
+    // Check-Ergebnisse
+    // ---------------------------------------------------------------
+
+    @Test
+    void saveAndLoadCheckResult() throws SQLException {
+        EndpointCheckResult r = new EndpointCheckResult(
+            "MyApi", "v1", "MyAlias", "https://backend/api",
+            200, true, null,
+            true, 12L, true, 8L
+        );
+        db.saveCheckResult("PROD", "id-1", "vm30073", r);
+
+        List<EndpointCheckResult> loaded = db.loadCheckResults("PROD", "id-1");
+        assertEquals(1, loaded.size());
+        EndpointCheckResult l = loaded.get(0);
+        assertEquals("https://backend/api", l.getUrl());
+        assertEquals("MyAlias", l.getAliasName());
+        assertTrue(l.isPingOk());
+        assertEquals(12L, l.getPingMs());
+        assertTrue(l.isTcpOk());
+        assertEquals(8L, l.getTcpMs());
+        assertEquals(200, l.getHttpStatus());
+        assertTrue(l.isReachable());
+        assertNull(l.getErrorMsg());
+    }
+
+    @Test
+    void saveCheckResultOverwritesExisting() throws SQLException {
+        EndpointCheckResult first = new EndpointCheckResult(
+            "Api", "v1", null, "https://backend/api",
+            200, true, null, true, 10L, true, 5L
+        );
+        EndpointCheckResult second = new EndpointCheckResult(
+            "Api", "v1", null, "https://backend/api",
+            500, false, "Server Error", false, -1L, true, 3L
+        );
+        db.saveCheckResult("PROD", "id-1", "vm30073", first);
+        db.saveCheckResult("PROD", "id-1", "vm30073", second);
+
+        List<EndpointCheckResult> loaded = db.loadCheckResults("PROD", "id-1");
+        assertEquals(1, loaded.size());
+        assertEquals(500, loaded.get(0).getHttpStatus());
+        assertFalse(loaded.get(0).isReachable());
+        assertEquals("Server Error", loaded.get(0).getErrorMsg());
+    }
+
+    @Test
+    void loadCheckResultsEmptyWhenNoData() throws SQLException {
+        assertTrue(db.loadCheckResults("PROD", "id-1").isEmpty());
+    }
+
+    @Test
+    void checkResultsIsolatedByEnvironmentAndApi() throws SQLException {
+        EndpointCheckResult r = new EndpointCheckResult(
+            "Api", "v1", null, "https://backend/api",
+            200, true, null, true, 5L, true, 3L
+        );
+        db.saveCheckResult("PROD", "id-1", "vm30073", r);
+        db.saveCheckResult("DEV",  "id-1", "vm30073", r);
+        db.saveCheckResult("PROD", "id-2", "vm30073", r);
+
+        assertEquals(1, db.loadCheckResults("PROD", "id-1").size());
+        assertEquals(1, db.loadCheckResults("DEV",  "id-1").size());
+        assertEquals(1, db.loadCheckResults("PROD", "id-2").size());
+        assertTrue(db.loadCheckResults("TEST", "id-1").isEmpty());
+    }
+
+    @Test
+    void checkResultErrorFieldsStoredCorrectly() throws SQLException {
+        EndpointCheckResult r = new EndpointCheckResult(
+            "Api", "v1", null, "dummy.dummy",
+            0, false, "Ungültige URL: no protocol: dummy.dummy",
+            false, -1L, false, -1L
+        );
+        db.saveCheckResult("PROD", "id-1", "vm30073", r);
+
+        EndpointCheckResult l = db.loadCheckResults("PROD", "id-1").get(0);
+        assertFalse(l.isPingOk());
+        assertEquals(-1L, l.getPingMs());
+        assertFalse(l.isTcpOk());
+        assertEquals(-1L, l.getTcpMs());
+        assertEquals(0, l.getHttpStatus());
+        assertFalse(l.isReachable());
+        assertEquals("Ungültige URL: no protocol: dummy.dummy", l.getErrorMsg());
+    }
 }

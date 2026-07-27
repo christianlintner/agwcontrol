@@ -10,6 +10,7 @@ import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
+import java.sql.SQLException;
 
 public class EndpointCheckService {
 
@@ -76,6 +77,32 @@ public class EndpointCheckService {
                 httpStatus, reachable, errorMsg,
                 ping.isReachable(), ping.getResponseTimeMs(),
                 tcp.isOpen(), tcp.getResponseTimeMs());
+    }
+
+    /**
+     * Prüft einen Backend-Endpoint und speichert das Ergebnis in der DB.
+     *
+     * @param aliasName  Alias-Name des Endpoints (null wenn direkter Endpoint)
+     * @param environment Umgebungsbezeichner (z. B. "PROD")
+     * @param apiId      ID der API in der DB
+     * @param serverHost Hostname des AGW-Servers, von dem der Check ausgeführt wird
+     * @param db         Datenbank, in die das Ergebnis gespeichert wird
+     */
+    public EndpointCheckResult check(String apiName, String apiVersion,
+                                     String aliasName, String urlStr,
+                                     String environment, String apiId, String serverHost,
+                                     ApiDatabase db) throws SQLException {
+        EndpointCheckResult result = check(apiName, apiVersion, urlStr);
+        // Ergebnis mit Alias-Name neu verpacken, falls vorhanden
+        EndpointCheckResult withAlias = aliasName != null
+            ? new EndpointCheckResult(result.getApiName(), result.getApiVersion(),
+                                      aliasName, result.getUrl(),
+                                      result.getHttpStatus(), result.isReachable(), result.getErrorMsg(),
+                                      result.isPingOk(), result.getPingMs(),
+                                      result.isTcpOk(), result.getTcpMs())
+            : result;
+        db.saveCheckResult(environment, apiId, serverHost, withAlias);
+        return withAlias;
     }
 
     private int doRequest(String urlStr, String method) throws IOException {
