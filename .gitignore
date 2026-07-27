@@ -12,3 +12,10 @@ agwcontrol.jar
 
 # Serverkonfiguration – enthält interne Hostnamen, nicht einchecken
 servers.properties
+
+# KeePass-Datenbank – enthält Credentials, nicht einchecken
+servers.kdbx
+
+# macOS Finder Metadaten
+.DS_Store
+**/.DS_Store
