@@ -7,8 +7,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.ServerSocket;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -80,7 +83,50 @@ class AppTest {
         assertTrue(err.toString().contains("Fehler:"));
     }
 
+    @Test
+    void kdbxPingFlowLoadsServers() throws URISyntaxException {
+        Path kdbx = testKdbx();
+        ByteArrayOutputStream out = captureStdout(() ->
+                App.runPing(kdbx, "test1234"));
+
+        String output = out.toString();
+        assertTrue(output.contains("vm40757.linux.oebb.at"), "Host aus KeePass muss in der Ausgabe stehen");
+    }
+
+    @Test
+    void kdbxTcpFlowLoadsServers() throws URISyntaxException {
+        Path kdbx = testKdbx();
+        ByteArrayOutputStream out = captureStdout(() ->
+                App.runTcpCheck(kdbx, "test1234"));
+
+        // Alle Einträge werden gecheckt – Ausgabe muss mindestens einen Host enthalten
+        assertTrue(out.toString().contains("vm40757.linux.oebb.at"), "Host aus KeePass muss in der Ausgabe stehen");
+    }
+
+    @Test
+    void kdbxMissingPasswordPrintsError() {
+        ByteArrayOutputStream err = captureStderr(() ->
+                App.main(new String[]{"ping", "--kdbx", "servers.kdbx"}));
+
+        assertTrue(err.toString().contains("Fehler:"));
+    }
+
+    @Test
+    void kdbxWrongPasswordPrintsError() throws URISyntaxException {
+        Path kdbx = testKdbx();
+        ByteArrayOutputStream err = captureStderr(() ->
+                App.runPing(kdbx, "falschesPasswort"));
+
+        assertTrue(err.toString().contains("Fehler:"));
+    }
+
     // --- Hilfsmethoden ---
+
+    private Path testKdbx() throws URISyntaxException {
+        URL resource = getClass().getClassLoader().getResource("test.kdbx");
+        assertNotNull(resource, "test.kdbx nicht in src/test/resources gefunden");
+        return Paths.get(resource.toURI());
+    }
 
     private ByteArrayOutputStream captureStdout(Runnable action) {
         ByteArrayOutputStream buf = new ByteArrayOutputStream();
