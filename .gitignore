@@ -9,3 +9,6 @@ build
 
 # Build-Artefakt (wird per gradle build erzeugt)
 agwcontrol.jar
+
+# Serverkonfiguration – enthält interne Hostnamen, nicht einchecken
+server.properties
