@@ -107,4 +107,41 @@ class AgwApiServiceTest {
         ServerConfig server = new ServerConfig("vm40757.linux.oebb.at", 8443, "user", "pass", "");
         assertEquals("https://vm40757.linux.oebb.at:8443", service.resolveBaseUrl(server));
     }
+
+    // ---------------------------------------------------------------
+    // parseEndpoints
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseEndpointsEmptyWhenFieldAbsent() {
+        String json = "{\"apiResponse\":{\"api\":{},\"responseStatus\":\"SUCCESS\"}}";
+        assertTrue(service.parseEndpoints(json).isEmpty());
+    }
+
+    @Test
+    void parseEndpointsEmptyArray() {
+        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[],\"responseStatus\":\"SUCCESS\"}}";
+        assertTrue(service.parseEndpoints(json).isEmpty());
+    }
+
+    @Test
+    void parseEndpointsSingleUrl() {
+        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[\"https://agw:443/gateway/API/v1\"],\"responseStatus\":\"SUCCESS\"}}";
+        List<String> eps = service.parseEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("https://agw:443/gateway/API/v1", eps.get(0));
+    }
+
+    @Test
+    void parseEndpointsMultipleUrls() {
+        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[" +
+                "\"https://agw:443/gateway/API/v1\"," +
+                "\"http://agw:5555/gateway/API/v1\"" +
+                "],\"responseStatus\":\"SUCCESS\"}}";
+        List<String> eps = service.parseEndpoints(json);
+        assertEquals(2, eps.size());
+        assertEquals("https://agw:443/gateway/API/v1", eps.get(0));
+        assertEquals("http://agw:5555/gateway/API/v1", eps.get(1));
+    }
+
 }

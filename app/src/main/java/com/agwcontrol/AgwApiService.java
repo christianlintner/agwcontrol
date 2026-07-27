@@ -24,6 +24,26 @@ public class AgwApiService {
     private static final int CONNECT_TIMEOUT_MS = 5_000;
     private static final int READ_TIMEOUT_MS    = 15_000;
 
+    /** Ruft GET /rest/apigateway/apis/{apiId} auf und gibt die Gateway-Endpoint-URLs zurück. */
+    public List<String> getEndpoints(ServerConfig server, String apiId) throws IOException {
+        String baseUrl = resolveBaseUrl(server);
+        URL url = new URL(baseUrl + "/rest/apigateway/apis/" + apiId);
+
+        HttpURLConnection conn = openConnection(url, server);
+        try {
+            int status = conn.getResponseCode();
+            if (status == 401) {
+                throw new IOException("Authentifizierung fehlgeschlagen (HTTP 401) für " + baseUrl);
+            }
+            if (status < 200 || status >= 300) {
+                throw new IOException("HTTP " + status + " von " + baseUrl);
+            }
+            return parseEndpoints(readBody(conn));
+        } finally {
+            conn.disconnect();
+        }
+    }
+
     /** Ruft GET /rest/apigateway/apis auf und gibt die gefundenen APIs zurück. */
     public List<ApiInfo> listApis(ServerConfig server) throws IOException {
         String baseUrl = resolveBaseUrl(server);
@@ -92,8 +112,28 @@ public class AgwApiService {
 
     // ---------------------------------------------------------------
     // Minimales JSON-Parsing ohne externe Bibliothek.
-    // Erwartet: {"apiResponse":[{"api":{...},"responseStatus":"SUCCESS"},...]}
     // ---------------------------------------------------------------
+
+    // Extrahiert den Inhalt von "gatewayEndPoints":["url1","url2",...]
+    private static final Pattern ENDPOINTS_ARRAY_PATTERN =
+            Pattern.compile("\"gatewayEndPoints\"\\s*:\\s*\\[([^\\]]*)\\]", Pattern.DOTALL);
+
+    private static final Pattern QUOTED_STRING_PATTERN =
+            Pattern.compile("\"([^\"]+)\"");
+
+    List<String> parseEndpoints(String json) {
+        List<String> result = new ArrayList<>();
+        Matcher arrayMatcher = ENDPOINTS_ARRAY_PATTERN.matcher(json);
+        if (arrayMatcher.find()) {
+            Matcher strMatcher = QUOTED_STRING_PATTERN.matcher(arrayMatcher.group(1));
+            while (strMatcher.find()) {
+                result.add(strMatcher.group(1));
+            }
+        }
+        return result;
+    }
+
+    // Erwartet: {"apiResponse":[{"api":{...},"responseStatus":"SUCCESS"},...]}
 
     // Trifft auf jeden "api":{...}-Block zu (nicht-greedy bis zur passenden })
     private static final Pattern API_BLOCK_PATTERN =

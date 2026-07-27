@@ -19,6 +19,8 @@ public class InteractiveMenu {
     private final TcpCheckResultFormatter tcpFormatter = new TcpCheckResultFormatter();
     private final AgwApiService agwApiService = new AgwApiService();
     private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
+    private final EndpointCheckService endpointCheckService = new EndpointCheckService();
+    private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out) {
         this.groups = groups;
@@ -81,6 +83,7 @@ public class InteractiveMenu {
             out.println("  [1]  Ping");
             out.println("  [2]  TCP-Check");
             out.println("  [3]  APIs auflisten");
+            out.println("  [4]  Endpoint-Check");
             out.println("  [b]  Zurück");
             out.println("  [q]  Beenden");
             out.print("Auswahl: ");
@@ -108,7 +111,17 @@ public class InteractiveMenu {
                 }
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [b] oder [q] eingeben.");
+            if ("4".equals(input)) {
+                ServerConfig server = selectServer(selected);
+                if (server != null) {
+                    List<ApiInfo> apis = selectApis(server);
+                    if (apis != null) {
+                        runEndpointCheck(server, apis);
+                    }
+                }
+                return;
+            }
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [b] oder [q] eingeben.");
         }
     }
 
@@ -166,6 +179,79 @@ public class InteractiveMenu {
             }
             out.println("Ungültige Eingabe.");
         }
+    }
+
+    /**
+     * Zeigt die API-Liste und lässt den Nutzer eine oder alle auswählen.
+     * Gibt eine Liste mit einer API (Einzelwahl), die volle Liste ([a]) oder
+     * null bei Abbruch zurück.
+     */
+    private List<ApiInfo> selectApis(ServerConfig server) {
+        out.println();
+        out.println("Lade API-Liste von " + server.getHost() + " ...");
+        List<ApiInfo> apis;
+        try {
+            apis = agwApiService.listApis(server);
+        } catch (IOException e) {
+            out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
+            return null;
+        }
+        if (apis.isEmpty()) {
+            out.println("Keine APIs gefunden.");
+            return null;
+        }
+        while (true) {
+            out.println();
+            out.println("API auswählen für " + server.getHost() + ":");
+            for (int i = 0; i < apis.size(); i++) {
+                ApiInfo a = apis.get(i);
+                out.printf("  [%d]  %-30s %-10s %s%n",
+                        i + 1, a.getName(), nullSafe(a.getVersion()), nullSafe(a.getType()));
+            }
+            out.println("  [a]  Alle APIs");
+            out.println("  [b]  Zurück");
+            out.print("Auswahl: ");
+
+            String input = scanner.nextLine().trim();
+            if ("b".equalsIgnoreCase(input)) {
+                return null;
+            }
+            if ("a".equalsIgnoreCase(input)) {
+                return apis;
+            }
+            int idx = parseIndex(input);
+            if (idx >= 1 && idx <= apis.size()) {
+                return List.of(apis.get(idx - 1));
+            }
+            out.println("Ungültige Eingabe.");
+        }
+    }
+
+    private void runEndpointCheck(ServerConfig server, List<ApiInfo> apis) {
+        List<EndpointCheckResult> results = new ArrayList<>();
+        for (ApiInfo api : apis) {
+            out.println("Lade Endpoints für " + api.getName() + " ...");
+            List<String> endpoints;
+            try {
+                endpoints = agwApiService.getEndpoints(server, api.getId());
+            } catch (IOException e) {
+                out.println("Fehler beim Abrufen der Endpoints für " + api.getName() + ": " + e.getMessage());
+                continue;
+            }
+            for (String url : endpoints) {
+                results.add(endpointCheckService.check(api.getName(), api.getVersion(), url));
+            }
+        }
+        out.println();
+        if (results.isEmpty()) {
+            out.println("Keine Endpoints gefunden.");
+            return;
+        }
+        out.println(endpointCheckFormatter.format(server.getHost(), results));
+    }
+
+    private String nullSafe(String s) {
+        return s != null ? s : "";
     }
 
     private void runApiList(ServerConfig server) {
