@@ -121,21 +121,43 @@ Die bestehenden Methoden ohne DB-Parameter bleiben unverändert erhalten
 **Cache-Status wird im Aktionsmenü-Header angezeigt**, `[c]` schaltet für die
 aktuelle Session um (gilt für alle folgenden Aktionen).
 
+**Normalfall – DB hat bereits Daten:**
 ```
-Aktion für PROD (2 Server):  Cache-Modus: [DB]
+Aktion für PROD (2 Server):  Cache-Modus: [Server (neu laden)]
   [1]  Ping
   [2]  TCP-Check
   [3]  APIs auflisten
   [4]  Endpoint-Check
   ─────────────────────────────────────
-  [c]  Cache umschalten  →  würde wechseln zu: Server (neu laden)
+  [c]  Cache umschalten  →  würde wechseln zu: DB
   [b]  Zurück
   [q]  Beenden
 ```
 
-- `InteractiveMenu` hält ein `DbCacheConfig cacheConfig`-Feld (Standard: `useDb = true`)
+**DB noch leer für diese Umgebung – Hinweis beim Toggle:**
+```
+Aktion für PROD (2 Server):  Cache-Modus: [Server (neu laden)]
+  ...
+  [c]  Cache umschalten  →  würde wechseln zu: DB  ⚠ noch keine Daten für PROD
+```
+
+- `InteractiveMenu` hält ein `DbCacheConfig cacheConfig`-Feld (Standard: `useDb = false`)
 - `[c]` ruft `cacheConfig.toggleAll()` auf und druckt das Menü neu
 - Aktionen `[3]` und `[4]` nutzen fortan die jeweils aktuelle `cacheConfig`
+
+**Fallback-Logik in `AgwApiService` (Cache leer):**
+
+Wenn `useDb = true`, die DB für die Umgebung aber **keine Daten enthält**:
+- wird automatisch vom Server geladen (Fallback)
+- Daten werden in die DB gespeichert
+- Ausgabe im Menü: `[Cache leer – lade vom Server]`
+
+```
+Lade APIs für PROD ...  [Cache leer – lade vom Server]
+```
+
+Dies stellt sicher, dass der Nutzer nie mit einer leeren Ergebnisliste konfrontiert wird,
+auch wenn er versehentlich `[DB]` gewählt hat bevor je Daten geladen wurden.
 
 ---
 
@@ -147,12 +169,12 @@ implementation 'org.xerial:sqlite-jdbc:3.45.3.0'
 
 ---
 
-### 5. Tests
+### 6. Tests
 
 | Testklasse | Inhalt |
 |---|---|
 | `ApiDatabaseTest` | Schema-Init, saveApis/loadApis, saveEndpoints/loadEndpoints, Überschreiben |
-| `AgwApiServiceTest` (erweitern) | Cache=DB gibt DB-Daten zurück; Cache=Server ruft Server auf und speichert |
+| `AgwApiServiceTest` (erweitern) | Cache=DB gibt DB-Daten zurück; Cache=Server ruft Server auf und speichert; Cache=DB aber DB leer → Fallback auf Server |
 
 Tests verwenden eine In-Memory-SQLite-DB (`:memory:`).
 
