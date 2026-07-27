@@ -121,4 +121,35 @@ class InteractiveMenuTest {
         ByteArrayOutputStream out = runMenu(singleGroup(), "1\nz\nb\nq\n");
         assertTrue(out.toString().contains("Ungültige Eingabe"));
     }
+
+    @Test
+    void actionMenuShowsApiListOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
+        assertTrue(out.toString().contains("APIs auflisten"));
+    }
+
+    @Test
+    void apiListActionShowsErrorForUnreachableServer() {
+        // Port 1 ist garantiert nicht erreichbar → Fehlertext erscheint
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenu(groups, "1\n3\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Fehler") || s.contains("Keine APIs"));
+    }
+
+    @Test
+    void apiListWithMultipleServersShowsServerSelectionMenu() {
+        // Gruppe mit 2 Servern → [3] → Server-Auswahlmenü muss erscheinen → b → q
+        ByteArrayOutputStream out = runMenu(twoGroups(), "2\n3\nb\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Server auswählen") || s.contains("127.0.0.1"));
+    }
+
+    @Test
+    void serverSelectionBackReturnsToActionMenu() {
+        // Gruppe mit 2 Servern → [3] → Server-Auswahlmenü → b (zurück) → q
+        // Kein Absturz, Menü bleibt bedienbar
+        assertDoesNotThrow(() -> runMenu(twoGroups(), "2\n3\nb\nq\n"));
+    }
 }

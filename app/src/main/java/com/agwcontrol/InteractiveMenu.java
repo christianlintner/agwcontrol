@@ -1,5 +1,6 @@
 package com.agwcontrol;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.util.ArrayList;
@@ -16,6 +17,8 @@ public class InteractiveMenu {
     private final PingResultFormatter pingFormatter = new PingResultFormatter();
     private final TcpCheckService tcpService = new TcpCheckService();
     private final TcpCheckResultFormatter tcpFormatter = new TcpCheckResultFormatter();
+    private final AgwApiService agwApiService = new AgwApiService();
+    private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out) {
         this.groups = groups;
@@ -77,6 +80,7 @@ public class InteractiveMenu {
             out.println("Aktion für " + label + " (" + totalServers + " Server):");
             out.println("  [1]  Ping");
             out.println("  [2]  TCP-Check");
+            out.println("  [3]  APIs auflisten");
             out.println("  [b]  Zurück");
             out.println("  [q]  Beenden");
             out.print("Auswahl: ");
@@ -97,7 +101,14 @@ public class InteractiveMenu {
                 runTcpCheck(selected);
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [b] oder [q] eingeben.");
+            if ("3".equals(input)) {
+                ServerConfig server = selectServer(selected);
+                if (server != null) {
+                    runApiList(server);
+                }
+                return;
+            }
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [b] oder [q] eingeben.");
         }
     }
 
@@ -121,6 +132,51 @@ public class InteractiveMenu {
         }
         out.println();
         out.println(tcpFormatter.format(results));
+    }
+
+    /**
+     * Bei genau einem Server in der Auswahl wird dieser direkt zurückgegeben.
+     * Bei mehreren Servern wird ein Auswahlmenü angezeigt.
+     * Gibt null zurück wenn der Nutzer abbricht.
+     */
+    private ServerConfig selectServer(List<ServerGroup> selected) {
+        List<ServerConfig> all = new ArrayList<>();
+        for (ServerGroup g : selected) {
+            all.addAll(g.getServers());
+        }
+        if (all.size() == 1) {
+            return all.get(0);
+        }
+        while (true) {
+            out.println();
+            out.println("Server auswählen:");
+            for (int i = 0; i < all.size(); i++) {
+                out.printf("  [%d]  %s%n", i + 1, all.get(i).getHost());
+            }
+            out.println("  [b]  Zurück");
+            out.print("Auswahl: ");
+
+            String input = scanner.nextLine().trim();
+            if ("b".equalsIgnoreCase(input)) {
+                return null;
+            }
+            int idx = parseIndex(input);
+            if (idx >= 1 && idx <= all.size()) {
+                return all.get(idx - 1);
+            }
+            out.println("Ungültige Eingabe.");
+        }
+    }
+
+    private void runApiList(ServerConfig server) {
+        out.println();
+        out.println("Lade APIs von " + server.getHost() + " ...");
+        try {
+            List<ApiInfo> apis = agwApiService.listApis(server);
+            out.println(apiInfoFormatter.format(server.getHost(), apis));
+        } catch (IOException e) {
+            out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
+        }
     }
 
     private int parseIndex(String input) {
