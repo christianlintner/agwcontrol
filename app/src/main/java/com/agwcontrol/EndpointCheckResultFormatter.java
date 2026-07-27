@@ -143,8 +143,8 @@ public class EndpointCheckResultFormatter {
             row.append(String.format("%-" + pingWidth + "s  ", pingCell(r)));
             row.append(String.format("%-" + tcpWidth + "s  ", tcpCell(r)));
         }
-        row.append(httpStatusCell(r)).append("%n");
-        return String.format(row.toString());
+        row.append(httpStatusCell(r)).append(System.lineSeparator());
+        return row.toString();
     }
 
     /** Ping-Spalteninhalt: "OK 12ms" / "FAIL" */
