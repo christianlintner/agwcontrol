@@ -78,13 +78,38 @@ Relevante Felder aus `APIResponseGetAPIs`:
 HTTP Basic Auth – Credentials kommen aus `ServerConfig.getUsername()` /
 `ServerConfig.getPassword()`.
 
+### API-Basis-URL
+
+Der AGW-Host (KeePass `URL`-Feld) ist der physische Server für Ping/TCP-Check.
+Der REST-API-Endpunkt des Integration Servers kann davon abweichen und wird im
+Custom Field **`IS-URL`** hinterlegt.
+
+Der Aufruf verwendet daher `ServerConfig.getIsUrl()` als Basis-URL:
+```
+<IS-URL>/rest/apigateway/apis
+```
+Ist `getIsUrl()` null (Fallback für alte Einträge ohne Custom Field), wird die
+`URL` (`https://<host>:<port>`) als Fallback verwendet.
+
+---
+
+## KeePass-Eintragsformat (aktualisiert)
+
+| Feld        | Inhalt                              | Beispiel                                  |
+|-------------|-------------------------------------|-------------------------------------------|
+| Title       | Hostname des Servers                | `vm40757.linux.oebb.at`                   |
+| URL         | AGW-Host-URL (für Ping/TCP)         | `https://vm40757.linux.oebb.at:443`       |
+| UserName    | Benutzername                        | `agwuser`                                 |
+| Password    | Passwort                            | `geheim`                                  |
+| **IS-URL**  | IS REST-API-Endpunkt (Custom Field) | `https://apigateway-oh-dev-is1.oebb.at:443` |
+
 ---
 
 ## Aktueller Zustand (Ist)
 
 | Klasse / Datei                  | Relevanz                                      |
 |---------------------------------|-----------------------------------------------|
-| `ServerConfig.java`             | Hält Host, Port, Username, Password – **bleibt** |
+| `ServerConfig.java`             | Hält Host, Port, Username, Password – **ergänzt um `isUrl`** |
 | `ServerGroup.java`              | Gruppiert Server – **bleibt**                 |
 | `InteractiveMenu.java`          | Aktionsmenü – **wird erweitert** (Option [3]) |
 | `App.java`                      | Einstiegspunkt – **bleibt unverändert**       |

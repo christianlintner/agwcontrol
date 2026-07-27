@@ -86,4 +86,24 @@ class KeePassConfigLoaderTest {
         assertThrows(IOException.class,
                 () -> new KeePassConfigLoader().loadGroups(kdbx, "falschesPasswort"));
     }
+
+    @Test
+    void parsesIsUrl() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerConfig entry = groups.stream()
+                .flatMap(g -> g.getServers().stream())
+                .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
+        assertEquals("https://vm40757.linux.oebb.at:443", entry.getIsUrl());
+    }
+
+    @Test
+    void allEntriesHaveIsUrl() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        groups.stream()
+                .flatMap(g -> g.getServers().stream())
+                .forEach(c -> assertNotNull(c.getIsUrl(),
+                        "IS-URL fehlt bei Eintrag: " + c.getHost()));
+    }
 }

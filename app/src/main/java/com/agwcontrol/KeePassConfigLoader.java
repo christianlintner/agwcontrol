@@ -4,6 +4,7 @@ import de.slackspace.openkeepass.KeePassDatabase;
 import de.slackspace.openkeepass.domain.Entry;
 import de.slackspace.openkeepass.domain.Group;
 import de.slackspace.openkeepass.domain.KeePassFile;
+import de.slackspace.openkeepass.domain.Property;
 import de.slackspace.openkeepass.exception.KeePassDatabaseUnreadableException;
 
 import java.io.IOException;
@@ -71,9 +72,21 @@ public class KeePassConfigLoader {
                 System.err.println("Warnung: URL \"" + url + "\" in Eintrag \"" + entry.getTitle() + "\" konnte nicht geparst werden – wird übersprungen.");
                 continue;
             }
-            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword()));
+            String isUrl = readIsUrl(entry);
+            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword(), isUrl));
         }
         return servers;
+    }
+
+    /**
+     * Liest das Custom Field "IS-URL" aus einem KeePass-Eintrag.
+     * Fehlt das Feld, wird null zurückgegeben.
+     */
+    private String readIsUrl(Entry entry) {
+        Property prop = entry.getPropertyByName("IS-URL");
+        if (prop == null) return null;
+        String value = prop.getValue();
+        return (value == null || value.trim().isEmpty()) ? null : value.trim();
     }
 
     private String parseHost(String url) {
