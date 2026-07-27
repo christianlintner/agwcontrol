@@ -29,4 +29,23 @@ class TcpCheckServiceTest {
         assertFalse(result.isOpen());
         assertEquals(-1, result.getResponseTimeMs());
     }
+
+    @Test
+    void checkByHostPortOpenPort() throws Exception {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+            TcpCheckResult result = new TcpCheckService().check("127.0.0.1", port, 2000);
+            assertTrue(result.isOpen());
+            assertTrue(result.getResponseTimeMs() >= 0);
+            assertEquals("127.0.0.1", result.getHost());
+            assertEquals(port, result.getPort());
+        }
+    }
+
+    @Test
+    void checkByHostPortClosedPort() {
+        TcpCheckResult result = new TcpCheckService().check("127.0.0.1", 1, 500);
+        assertFalse(result.isOpen());
+        assertEquals(-1, result.getResponseTimeMs());
+    }
 }

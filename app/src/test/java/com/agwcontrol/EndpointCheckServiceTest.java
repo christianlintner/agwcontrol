@@ -15,24 +15,39 @@ class EndpointCheckServiceTest {
 
     private final EndpointCheckService service = new EndpointCheckService();
 
-    /** Startet einen einmaligen HTTP-Server, der exakt `response` zurückliefert. */
+    /**
+     * Startet einen Multi-Accept-Server, der auf jede eingehende Verbindung dieselbe
+     * HTTP-Response zurückliefert. Schliesst sich automatisch nach dem ersten echten
+     * HTTP-Request (erkennbar an "HTTP/" in der Anfrage).
+     */
     private int startOneShotServer(String response) throws IOException {
         ServerSocket ss = new ServerSocket(0);
-        ExecutorService ex = Executors.newSingleThreadExecutor();
+        ExecutorService ex = Executors.newCachedThreadPool();
         ex.submit(() -> {
-            try (Socket s = ss.accept()) {
-                // Request lesen (und ignorieren)
-                byte[] buf = new byte[4096];
-                s.getInputStream().read(buf);
-                OutputStream out = s.getOutputStream();
-                PrintWriter pw = new PrintWriter(out, true);
-                pw.print(response);
-                pw.flush();
-            } catch (IOException ignored) {
-            } finally {
-                try { ss.close(); } catch (IOException ignored) {}
-                ex.shutdown();
+            while (!ss.isClosed()) {
+                try {
+                    Socket s = ss.accept();
+                    ex.submit(() -> {
+                        try {
+                            byte[] buf = new byte[4096];
+                            int n = s.getInputStream().read(buf);
+                            String req = n > 0 ? new String(buf, 0, n) : "";
+                            OutputStream out = s.getOutputStream();
+                            PrintWriter pw = new PrintWriter(out, true);
+                            pw.print(response);
+                            pw.flush();
+                            s.close();
+                            // Nach echtem HTTP-Request Server schliessen
+                            if (req.contains("HTTP/")) {
+                                ss.close();
+                            }
+                        } catch (IOException ignored) {}
+                    });
+                } catch (IOException ignored) {
+                    break;
+                }
             }
+            ex.shutdown();
         });
         return ss.getLocalPort();
     }
@@ -50,13 +65,25 @@ class EndpointCheckServiceTest {
     }
 
     @Test
-    void notReachableOn404() throws Exception {
+    void reachableOn404() throws Exception {
+        // 404 = Server antwortet → erreichbar (nur Timeout/Verbindungsfehler = FAIL)
         int port = startOneShotServer(
                 "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
         String url = "http://127.0.0.1:" + port + "/nope";
         EndpointCheckResult r = service.check("OldAPI", "2.0", url);
         assertEquals(404, r.getHttpStatus());
-        assertFalse(r.isReachable());
+        assertTrue(r.isReachable());
+    }
+
+    @Test
+    void reachableOn500() throws Exception {
+        // 500 = Server antwortet → erreichbar
+        int port = startOneShotServer(
+                "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        String url = "http://127.0.0.1:" + port + "/err";
+        EndpointCheckResult r = service.check("ErrAPI", "1.0", url);
+        assertEquals(500, r.getHttpStatus());
+        assertTrue(r.isReachable());
     }
 
     @Test
@@ -83,5 +110,32 @@ class EndpointCheckServiceTest {
         String url = "http://127.0.0.1:" + port + "/my/path";
         EndpointCheckResult r = service.check("X", "1", url);
         assertEquals(url, r.getUrl());
+    }
+
+    @Test
+    void pingOkForLoopback() throws Exception {
+        int port = startOneShotServer(
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        String url = "http://127.0.0.1:" + port + "/test";
+        EndpointCheckResult r = service.check("A", "1", url);
+        assertTrue(r.isPingOk(), "Ping auf 127.0.0.1 muss OK sein");
+        assertTrue(r.getPingMs() >= 0);
+    }
+
+    @Test
+    void tcpOkWhenPortOpen() throws Exception {
+        int port = startOneShotServer(
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+        String url = "http://127.0.0.1:" + port + "/test";
+        EndpointCheckResult r = service.check("A", "1", url);
+        assertTrue(r.isTcpOk(), "TCP auf offenem Port muss OK sein");
+        assertTrue(r.getTcpMs() >= 0);
+    }
+
+    @Test
+    void pingAndTcpFailForUnreachablePort() {
+        EndpointCheckResult r = service.check("A", "1", "http://127.0.0.1:1/ep");
+        assertFalse(r.isTcpOk());
+        assertEquals(-1, r.getTcpMs());
     }
 }

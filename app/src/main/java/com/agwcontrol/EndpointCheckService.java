@@ -15,25 +15,67 @@ public class EndpointCheckService {
 
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS    = 15_000;
+    private static final int PING_TIMEOUT_MS    = 2_000;
+    private static final int TCP_TIMEOUT_MS     = 2_000;
+
+    private final PingService pingService;
+    private final TcpCheckService tcpService;
+
+    public EndpointCheckService() {
+        this(new PingService(), new TcpCheckService());
+    }
+
+    EndpointCheckService(PingService pingService, TcpCheckService tcpService) {
+        this.pingService = pingService;
+        this.tcpService  = tcpService;
+    }
 
     /**
-     * Prüft einen Gateway-Endpoint per HTTP HEAD (Fallback: GET bei 405).
+     * Prüft einen Backend-Endpoint per Ping, TCP-Connect und HTTP(S) HEAD/GET.
      *
-     * @param apiName    Name der API – wird 1:1 ins Ergebnis übernommen
-     * @param apiVersion Version der API – wird 1:1 ins Ergebnis übernommen
-     * @param url        Gateway-Endpoint-URL
+     * @param apiName    Name der API
+     * @param apiVersion Version der API
+     * @param urlStr     aufgelöste Backend-URL (z.B. https://backend:8080/service)
      */
-    public EndpointCheckResult check(String apiName, String apiVersion, String url) {
+    public EndpointCheckResult check(String apiName, String apiVersion, String urlStr) {
+        // Host + Port aus URL extrahieren
+        String host;
+        int port;
         try {
-            int status = doRequest(url, "HEAD");
-            if (status == 405) {
-                status = doRequest(url, "GET");
+            URL parsed = new URL(urlStr);
+            host = parsed.getHost();
+            port = parsed.getPort();
+            if (port == -1) {
+                port = "https".equalsIgnoreCase(parsed.getProtocol()) ? 443 : 80;
             }
-            boolean reachable = status >= 200 && status < 400;
-            return new EndpointCheckResult(apiName, apiVersion, url, status, reachable, "");
         } catch (Exception e) {
-            return new EndpointCheckResult(apiName, apiVersion, url, 0, false, e.getMessage());
+            return new EndpointCheckResult(apiName, apiVersion, null, urlStr, 0, false,
+                    "Ungültige URL: " + e.getMessage(), false, -1L, false, -1L);
         }
+
+        // Ping
+        PingResult ping = pingService.ping(host, PING_TIMEOUT_MS);
+
+        // TCP
+        TcpCheckResult tcp = tcpService.check(host, port, TCP_TIMEOUT_MS);
+
+        // HTTP
+        int httpStatus = 0;
+        String errorMsg = "";
+        try {
+            httpStatus = doRequest(urlStr, "HEAD");
+            if (httpStatus == 405) {
+                httpStatus = doRequest(urlStr, "GET");
+            }
+        } catch (Exception e) {
+            errorMsg = e.getMessage();
+        }
+        boolean reachable = httpStatus > 0;
+
+        return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
+                httpStatus, reachable, errorMsg,
+                ping.isReachable(), ping.getResponseTimeMs(),
+                tcp.isOpen(), tcp.getResponseTimeMs());
     }
 
     private int doRequest(String urlStr, String method) throws IOException {

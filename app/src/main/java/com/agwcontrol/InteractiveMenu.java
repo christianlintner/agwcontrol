@@ -275,11 +275,12 @@ public class InteractiveMenu {
                     out.println(ts() + "  Alias '" + ep.getAliasName() + "' konnte nicht aufgelöst werden.");
                     continue;
                 }
-                out.println(ts() + "  Prüfe " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url + " ...");
+                out.println(ts() + "  Prüfe Ping/TCP/HTTP für " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url + " ...");
                 EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
                 if (ep.isAlias()) {
                     r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
-                            ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg());
+                            ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg(),
+                            r.isPingOk(), r.getPingMs(), r.isTcpOk(), r.getTcpMs());
                 }
                 results.add(r);
             }

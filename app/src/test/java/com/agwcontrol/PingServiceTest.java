@@ -25,4 +25,19 @@ class PingServiceTest {
         assertFalse(result.isReachable());
         assertEquals(-1, result.getResponseTimeMs());
     }
+
+    @Test
+    void pingByHostStringLoopbackReachable() {
+        PingResult result = new PingService().ping("127.0.0.1", 2000);
+        assertEquals("127.0.0.1", result.getHost());
+        assertTrue(result.isReachable());
+        assertTrue(result.getResponseTimeMs() >= 0);
+    }
+
+    @Test
+    void pingByHostStringUnreachable() {
+        PingResult result = new PingService().ping("192.0.2.1", 500);
+        assertFalse(result.isReachable());
+        assertEquals(-1, result.getResponseTimeMs());
+    }
 }
