@@ -74,6 +74,16 @@ Einfaches Konfigurationsobjekt mit einem Flag pro Funktion.
 public class DbCacheConfig {
     boolean useDbForApis;       // true = aus DB, false = vom Server (+ DB überschreiben)
     boolean useDbForEndpoints;  // true = aus DB, false = vom Server (+ DB überschreiben)
+
+    /** Schaltet beide Flags gleichzeitig um (Session-Toggle). */
+    public void toggleAll() {
+        useDbForApis      = !useDbForApis;
+        useDbForEndpoints = !useDbForEndpoints;
+    }
+
+    public String label() {
+        return useDbForApis ? "DB" : "Server (neu laden)";
+    }
 }
 ```
 
@@ -106,7 +116,30 @@ Die bestehenden Methoden ohne DB-Parameter bleiben unverändert erhalten
 
 ---
 
-### 4. `build.gradle` – neue Dependency
+### 4. `InteractiveMenu` – Cache-Toggle
+
+**Cache-Status wird im Aktionsmenü-Header angezeigt**, `[c]` schaltet für die
+aktuelle Session um (gilt für alle folgenden Aktionen).
+
+```
+Aktion für PROD (2 Server):  Cache-Modus: [DB]
+  [1]  Ping
+  [2]  TCP-Check
+  [3]  APIs auflisten
+  [4]  Endpoint-Check
+  ─────────────────────────────────────
+  [c]  Cache umschalten  →  würde wechseln zu: Server (neu laden)
+  [b]  Zurück
+  [q]  Beenden
+```
+
+- `InteractiveMenu` hält ein `DbCacheConfig cacheConfig`-Feld (Standard: `useDb = true`)
+- `[c]` ruft `cacheConfig.toggleAll()` auf und druckt das Menü neu
+- Aktionen `[3]` und `[4]` nutzen fortan die jeweils aktuelle `cacheConfig`
+
+---
+
+### 5. `build.gradle` – neue Dependency
 
 ```groovy
 implementation 'org.xerial:sqlite-jdbc:3.45.3.0'
@@ -128,11 +161,13 @@ Tests verwenden eine In-Memory-SQLite-DB (`:memory:`).
 ## Implementierungsreihenfolge
 
 - [ ] `build.gradle`: sqlite-jdbc Dependency hinzufügen
-- [ ] `DbCacheConfig` erstellen
+- [ ] `DbCacheConfig` erstellen (inkl. `toggleAll()` und `label()`)
 - [ ] `ApiDatabase` erstellen (inkl. Schema-Init, save/load für apis und endpoints)
 - [ ] `ApiDatabaseTest` erstellen
 - [ ] `AgwApiService` erweitern (neue überladene Methoden mit DB/Cache-Parameter)
 - [ ] `AgwApiServiceTest` erweitern
+- [ ] `InteractiveMenu` erweitern: `cacheConfig`-Feld, `[c]`-Toggle, Header-Anzeige
+- [ ] `InteractiveMenuTest` erweitern: Toggle-Verhalten prüfen
 - [ ] Build + alle Tests grün
 
 ---
@@ -140,4 +175,3 @@ Tests verwenden eine In-Memory-SQLite-DB (`:memory:`).
 ## Nicht im Scope dieses Issues
 
 - Vergleich zwischen zwei Umgebungen → Issue #8
-- CLI-Integration / Menü-Anpassung für Cache-Steuerung
