@@ -19,3 +19,4 @@ servers.kdbx
 # macOS Finder Metadaten
 .DS_Store
 **/.DS_Store
+servers.kdbx.bak

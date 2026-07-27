@@ -31,6 +31,9 @@ dependencies {
     // KeePass 2.x .kdbx support
     implementation 'de.slackspace:openkeepass:0.8.2'
 
+    // SLF4J-Binding: unterdrückt die "Failed to load StaticLoggerBinder"-Warnung
+    runtimeOnly 'org.slf4j:slf4j-nop:1.7.36'
+
     // SQLite – lokale Datenbank (Single-File)
     implementation 'org.xerial:sqlite-jdbc:3.45.3.0'
 }
