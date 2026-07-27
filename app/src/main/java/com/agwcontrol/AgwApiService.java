@@ -24,12 +24,17 @@ public class AgwApiService {
     private static final int CONNECT_TIMEOUT_MS = 5_000;
     private static final int READ_TIMEOUT_MS    = 15_000;
 
-    /** Ruft GET /rest/apigateway/apis/{apiId} auf und gibt die Gateway-Endpoint-URLs zurück. */
-    public List<String> getEndpoints(ServerConfig server, String apiId) throws IOException {
+    /**
+     * Ruft GET /rest/apigateway/apis/{apiId} auf, liest das nativeEndpoint-Array
+     * und gibt die aufgelösten Routing-Endpoints zurück.
+     * Bei alias=true wird der Alias via GET /alias/{name} aufgelöst.
+     */
+    public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId) throws IOException {
         String baseUrl = resolveBaseUrl(server);
         URL url = new URL(baseUrl + "/rest/apigateway/apis/" + apiId);
 
         HttpURLConnection conn = openConnection(url, server);
+        String body;
         try {
             int status = conn.getResponseCode();
             if (status == 401) {
@@ -38,7 +43,46 @@ public class AgwApiService {
             if (status < 200 || status >= 300) {
                 throw new IOException("HTTP " + status + " von " + baseUrl);
             }
-            return parseEndpoints(readBody(conn));
+            body = readBody(conn);
+        } finally {
+            conn.disconnect();
+        }
+
+        List<RoutingEndpoint> result = new ArrayList<>();
+        for (NativeEndpointEntry entry : parseNativeEndpoints(body)) {
+            if (entry.alias) {
+                String resolvedUrl = resolveAlias(server, entry.uri);
+                if (resolvedUrl != null) {
+                    result.add(RoutingEndpoint.alias(entry.uri, resolvedUrl));
+                } else {
+                    // Alias nicht auflösbar – Alias-Namen als URL-Platzhalter
+                    result.add(RoutingEndpoint.alias(entry.uri, null));
+                }
+            } else {
+                result.add(RoutingEndpoint.direct(entry.uri));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Löst einen Endpoint-Alias via GET /rest/apigateway/alias/{aliasName} auf.
+     * Gibt die endPointURI zurück oder null wenn nicht gefunden / kein endpoint-Typ.
+     */
+    String resolveAlias(ServerConfig server, String aliasName) throws IOException {
+        String baseUrl = resolveBaseUrl(server);
+        URL url = new URL(baseUrl + "/rest/apigateway/alias/" + aliasName);
+
+        HttpURLConnection conn = openConnection(url, server);
+        try {
+            int status = conn.getResponseCode();
+            if (status == 404) {
+                return null;
+            }
+            if (status < 200 || status >= 300) {
+                return null;
+            }
+            return parseEndPointURI(readBody(conn));
         } finally {
             conn.disconnect();
         }
@@ -114,23 +158,49 @@ public class AgwApiService {
     // Minimales JSON-Parsing ohne externe Bibliothek.
     // ---------------------------------------------------------------
 
-    // Extrahiert den Inhalt von "gatewayEndPoints":["url1","url2",...]
-    private static final Pattern ENDPOINTS_ARRAY_PATTERN =
-            Pattern.compile("\"gatewayEndPoints\"\\s*:\\s*\\[([^\\]]*)\\]", Pattern.DOTALL);
+    /** Internes DTO für einen nativeEndpoint-Eintrag. */
+    static final class NativeEndpointEntry {
+        final String uri;
+        final boolean alias;
+        NativeEndpointEntry(String uri, boolean alias) {
+            this.uri = uri;
+            this.alias = alias;
+        }
+    }
 
-    private static final Pattern QUOTED_STRING_PATTERN =
-            Pattern.compile("\"([^\"]+)\"");
+    // Trifft auf jeden nativeEndpoint-Block innerhalb von {...}
+    private static final Pattern NATIVE_EP_BLOCK_PATTERN =
+            Pattern.compile("\\{([^{}]*\"uri\"[^{}]*)\\}", Pattern.DOTALL);
 
-    List<String> parseEndpoints(String json) {
-        List<String> result = new ArrayList<>();
-        Matcher arrayMatcher = ENDPOINTS_ARRAY_PATTERN.matcher(json);
-        if (arrayMatcher.find()) {
-            Matcher strMatcher = QUOTED_STRING_PATTERN.matcher(arrayMatcher.group(1));
-            while (strMatcher.find()) {
-                result.add(strMatcher.group(1));
+    // Extrahiert "endPointURI":"<value>"
+    private static final Pattern ENDPOINT_URI_PATTERN =
+            Pattern.compile("\"endPointURI\"\\s*:\\s*\"([^\"]+)\"");
+
+    List<NativeEndpointEntry> parseNativeEndpoints(String json) {
+        List<NativeEndpointEntry> result = new ArrayList<>();
+        // Nur den nativeEndpoint-Array-Bereich betrachten
+        Pattern nativeArrayPattern = Pattern.compile(
+                "\"nativeEndpoint\"\\s*:\\s*\\[(.*?)\\](?=\\s*[,}])", Pattern.DOTALL);
+        Matcher arrayMatcher = nativeArrayPattern.matcher(json);
+        if (!arrayMatcher.find()) {
+            return result;
+        }
+        String arrayContent = arrayMatcher.group(1);
+        Matcher blockMatcher = NATIVE_EP_BLOCK_PATTERN.matcher(arrayContent);
+        while (blockMatcher.find()) {
+            String block = blockMatcher.group(1);
+            String uri = extractString(block, "uri");
+            boolean alias = extractBoolean(block, "alias");
+            if (uri != null && !uri.isEmpty()) {
+                result.add(new NativeEndpointEntry(uri, alias));
             }
         }
         return result;
+    }
+
+    String parseEndPointURI(String json) {
+        Matcher m = ENDPOINT_URI_PATTERN.matcher(json);
+        return m.find() ? m.group(1) : null;
     }
 
     // Erwartet: {"apiResponse":[{"api":{...},"responseStatus":"SUCCESS"},...]}

@@ -1,4 +1,4 @@
-# Plan: Issue #5 – Endpoint-Check für AGW-APIs
+# Plan: Issue #5 – Endpoint-Check für AGW-APIs (korrigiert: Routing Policy / Endpoint Alias)
 
 Branch: `feat/issue-5-endpoint-check`
 
@@ -7,10 +7,10 @@ Branch: `feat/issue-5-endpoint-check`
 ## Ziel
 
 Im interaktiven Menü wird eine neue Aktion **„Endpoint-Check"** ergänzt.
-Für eine oder alle APIs eines gewählten Servers werden deren Gateway-Endpoints
-per HTTP-GET abgerufen und anschließend ein HTTP-Erreichbarkeits-Check
-(HEAD oder GET) gegen jeden Endpoint durchgeführt. Das Ergebnis wird als Tabelle
-auf der Konsole ausgegeben.
+Für eine oder alle APIs eines gewählten Servers wird der **Routing-Endpoint** ermittelt
+und angezeigt. Wenn die API eine Routing Policy mit einem **Endpoint-Alias** verwendet,
+wird dieser Alias aufgelöst (`endPointURI`) und die aufgelöste URL auf Erreichbarkeit
+geprüft.
 
 Erweiterung des Aktionsmenüs:
 
@@ -24,14 +24,17 @@ Aktion für OH-DEV (3 Server):
   [q]  Beenden
 ```
 
-Bei Auswahl `[4]` wird zunächst ein Server gewählt (wie bei `[3]`),
-dann die API-Liste geladen. Der Nutzer kann entweder **eine einzelne API**
-oder **alle APIs** (`[a]`) auswählen. Anschließend werden die Gateway-Endpoints
-der gewählten API(s) abgefragt und geprüft.
+Bei Auswahl `[4]`:
+1. Server wählen (wie bei `[3]`)
+2. API-Liste laden, Nutzer wählt eine API oder `[a]` für alle
+3. Pro API: `nativeEndpoint`-Array auswerten – Alias-Flag erkennen
+4. Bei `alias = true`: Alias über `GET /alias/{aliasId}` auflösen → `endPointURI`
+5. HTTP-Check gegen die aufgelöste URL durchführen
+6. Ergebnis tabellarisch ausgeben
 
 ---
 
-## AGW REST-API (aus OpenAPI-Spec `apis.openapi.json`)
+## AGW REST-API (aus OpenAPI-Spec)
 
 ### Schritt 1 – API-Liste laden (bereits vorhanden)
 
@@ -45,10 +48,7 @@ Wird über den bestehenden `AgwApiService.listApis()` aufgerufen.
 
 ---
 
-### Schritt 2 – Gateway-Endpoints einer API abrufen
-
-Der Endpoint `GET /apis/{apiId}` liefert in der Response das Feld
-`gatewayEndPoints` (Array von Strings) innerhalb des `apiResponse`-Objekts.
+### Schritt 2 – API-Detail abrufen: `nativeEndpoint`
 
 ```
 GET <IS-URL>/rest/apigateway/apis/{apiId}
@@ -56,250 +56,241 @@ Authorization: Basic <base64(user:password)>
 Accept: application/json
 ```
 
-#### Response-Struktur (relevanter Auszug)
+#### Response (relevanter Auszug)
 
 ```json
 {
   "apiResponse": {
-    "api": { ... },
-    "gatewayEndPoints": [
-      "https://agw-host:443/gateway/CustomerAPI/v1",
-      "http://agw-host:5555/gateway/CustomerAPI/v1"
-    ],
+    "api": {
+      "nativeEndpoint": [
+        {
+          "uri": "https://backend.example.com/service",
+          "alias": false,
+          "connectionTimeoutDuration": 0,
+          "passSecurityHeaders": true
+        }
+      ]
+    },
+    "gatewayEndPoints": ["https://agw-host:443/gateway/CustomerAPI/v1"],
     "responseStatus": "SUCCESS"
   }
 }
 ```
 
-Relevante Felder aus `APIResponse`:
+**Fall: Alias = true**
 
-| JSON-Feld                     | Bedeutung                                    |
-|-------------------------------|----------------------------------------------|
-| `apiResponse.gatewayEndPoints` | Liste der Gateway-Endpoint-URLs (Strings)   |
-| `apiResponse.responseStatus`  | `SUCCESS` / `ERROR` / `NOT_FOUND`           |
+```json
+{
+  "apiResponse": {
+    "api": {
+      "nativeEndpoint": [
+        {
+          "uri": "MystageEndpoint",
+          "alias": true,
+          "connectionTimeoutDuration": 0,
+          "passSecurityHeaders": true
+        }
+      ]
+    }
+  }
+}
+```
+
+Wenn `"alias": true`, ist `"uri"` der **Name des Endpoint-Alias** (nicht die Ziel-URL).
+Die echte URL muss über die Alias-API aufgelöst werden.
+
+Relevante Felder aus `Endpoint`-Schema:
+
+| JSON-Feld                    | Bedeutung                                                  |
+|------------------------------|------------------------------------------------------------|
+| `nativeEndpoint[].uri`       | URL oder Alias-Name (je nach `alias`-Flag)                 |
+| `nativeEndpoint[].alias`     | `true` = `uri` ist ein Alias-Name; `false` = direkte URL  |
+| `gatewayEndPoints`           | Gateway-seitige Endpunkte (bereits implementiert)          |
 
 ---
 
-### Schritt 3 – HTTP-Check gegen jeden Endpoint
+### Schritt 3 – Endpoint-Alias auflösen (nur wenn `alias = true`)
 
-Für jeden Gateway-Endpoint wird ein HTTP-Request abgesetzt:
+```
+GET <IS-URL>/rest/apigateway/alias/{aliasId}
+Authorization: Basic <base64(user:password)>
+Accept: application/json
+```
+
+Wobei `{aliasId}` = der Wert aus `nativeEndpoint[].uri` (z.B. `"MystageEndpoint"`).
+
+#### Response (relevanter Auszug)
+
+```json
+{
+  "id": "732c4526-db9a-4ef9-9782-edda1a6aa9bc",
+  "endPointURI": "https://myDevstage:9090",
+  "name": "MystageEndpoint",
+  "type": "endpoint"
+}
+```
+
+Relevante Felder:
+
+| JSON-Feld      | Bedeutung                                       |
+|----------------|-------------------------------------------------|
+| `endPointURI`  | Die aufgelöste Backend-URL des Endpoint-Alias   |
+| `name`         | Alias-Name (zur Anzeige)                        |
+| `type`         | Alias-Typ (`endpoint` für Endpoint-Aliasse)     |
+
+---
+
+### Schritt 4 – HTTP-Check gegen den Backend-Endpoint
+
+Für jeden aufgelösten Endpoint wird ein HTTP-Request abgesetzt:
 
 - Methode: `HEAD` (Fallback auf `GET` wenn HEAD 405 zurückliefert)
 - Timeout: 10 s (Connect) + 15 s (Read)
 - TLS: Trust-All SSLContext (wie in `AgwApiService`)
-- Keine Authentifizierung (Endpoints sind für Consumers gedacht)
+- Authentifizierung: keine (Backend-URL)
 - Redirect folgen: ja (bis max. 5 Redirects)
-
-Ergebnis je Endpoint:
-
-| Feld         | Typ     | Beschreibung                                     |
-|--------------|---------|--------------------------------------------------|
-| `apiName`    | String  | Name der zugehörigen API                         |
-| `apiVersion` | String  | Version der zugehörigen API                      |
-| `url`        | String  | Die geprüfte Endpoint-URL                        |
-| `httpStatus` | int     | HTTP-Statuscode (0 = nicht erreichbar)           |
-| `reachable`  | boolean | true wenn HTTP 2xx oder 3xx                      |
-| `errorMsg`   | String  | Fehlermeldung bei Exception, sonst leer          |
 
 ---
 
 ## Aktueller Zustand (Ist)
 
-| Klasse / Datei               | Relevanz                                          |
-|------------------------------|---------------------------------------------------|
-| `AgwApiService.java`         | Lädt API-Liste – **wird erweitert** um `getEndpoints()` |
-| `ApiInfo.java`               | API-Datenmodell – **bleibt unverändert**          |
-| `InteractiveMenu.java`       | Aktionsmenü – **wird erweitert** (Option [4])     |
-| `ServerConfig.java`          | Server-Konfiguration – **bleibt unverändert**     |
-| `PingService.java`           | Ping-Logik – **bleibt unverändert**               |
-| `TcpCheckService.java`       | TCP-Logik – **bleibt unverändert** (Muster für neuen Service) |
+| Klasse / Datei                    | Relevanz                                                    |
+|-----------------------------------|-------------------------------------------------------------|
+| `AgwApiService.java`              | Lädt API-Liste + `getEndpoints()` → **wird erweitert**      |
+| `ApiInfo.java`                    | API-Datenmodell – **bleibt unverändert**                    |
+| `EndpointCheckResult.java`        | Ergebnis-Modell – **bleibt unverändert**                    |
+| `EndpointCheckService.java`       | HTTP HEAD/GET-Check – **bleibt unverändert**                |
+| `EndpointCheckResultFormatter.java` | Ausgabe-Formatter – **wird erweitert** (Alias-Name anzeigen)|
+| `InteractiveMenu.java`            | Aktionsmenü + `selectApis()` + `runEndpointCheck()` – **wird erweitert** |
+| `ServerConfig.java`               | Server-Konfiguration – **bleibt unverändert**               |
+
+**Was bereits implementiert ist:**
+- `getEndpoints()` in `AgwApiService` → liest `gatewayEndPoints`-Array
+- `EndpointCheckService.check()` → HTTP HEAD/GET
+- `InteractiveMenu` → Option [4], `selectApis()`, `runEndpointCheck()`
+
+**Was fehlt / falsch ist:**
+- Die aktuelle Implementierung prüft `gatewayEndPoints` (die Gateway-seitige URL)
+- Gefordert ist die Prüfung des **Routing-Endpoints** (Backend-seitige `nativeEndpoint`)
+- Bei `alias = true` muss der Alias aufgelöst werden via `GET /alias/{aliasId}`
+- Die API-Liste soll den **Routing-Endpoint-Namen** bereits beim Auflisten anzeigen
 
 ---
 
 ## Geplante Änderungen (Soll)
 
-### 1. Neues Datenmodell: `EndpointCheckResult`
+### 1. Neues Datenmodell: `RoutingEndpoint`
 
-Kapselt das Ergebnis eines HTTP-Checks gegen einen Gateway-Endpoint.
-Trägt zusätzlich den API-Namen und die Version, damit bei der Ausgabe über
-mehrere APIs hinweg die Zuordnung erhalten bleibt:
+Kapselt den ermittelten Routing-Endpunkt einer API (vor dem HTTP-Check):
 
 ```java
-public class EndpointCheckResult {
-    private final String apiName;
-    private final String apiVersion;
-    private final String url;
-    private final int httpStatus;
-    private final boolean reachable;
-    private final String errorMsg;
+public class RoutingEndpoint {
+    private final String aliasName;    // null wenn kein Alias; sonst z.B. "MystageEndpoint"
+    private final String resolvedUrl;  // aufgelöste URL (endPointURI oder direkte uri)
+    private final boolean isAlias;     // true wenn über Alias-Auflösung
 
-    public EndpointCheckResult(String apiName, String apiVersion,
-                               String url, int httpStatus,
-                               boolean reachable, String errorMsg) { ... }
-
-    // Getter
-    public String getApiName()    { ... }
-    public String getApiVersion() { ... }
-    public String getUrl()        { ... }
-    public int getHttpStatus()    { ... }
-    public boolean isReachable()  { ... }
-    public String getErrorMsg()   { ... }
+    // Konstruktor + Getter
 }
 ```
 
 ---
 
-### 2. Erweiterung `AgwApiService` – neue Methode `getEndpoints()`
+### 2. Erweiterung `AgwApiService`
 
-Ruft `GET /rest/apigateway/apis/{apiId}` auf und extrahiert die
-`gatewayEndPoints`-Liste:
+#### 2a. Neue Methode `getNativeEndpoints()`
+
+Ruft `GET /rest/apigateway/apis/{apiId}` auf und extrahiert das `nativeEndpoint`-Array:
 
 ```java
 /**
- * Ruft GET /rest/apigateway/apis/{apiId} auf und gibt die Gateway-Endpoint-URLs zurück.
- * @throws IOException bei Verbindungsfehlern oder HTTP-Fehlerantworten
+ * Gibt alle nativeEndpoint-Einträge der API zurück.
+ * Jeder Eintrag enthält uri + alias-Flag.
  */
-public List<String> getEndpoints(ServerConfig server, String apiId) throws IOException
+public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId) throws IOException
 ```
 
 **Implementierungsdetails:**
 - URL: `<resolveBaseUrl(server)>/rest/apigateway/apis/<apiId>`
-- Header: `Authorization: Basic`, `Accept: application/json`
-- JSON-Parsing: Regex/Pattern analog zu `parseApis()` – extrahiert
-  `"gatewayEndPoints"\s*:\s*\[([^\]]*)\]` und splittet die enthaltenen
-  String-Werte
-- Gibt leere Liste zurück, wenn kein `gatewayEndPoints`-Feld vorhanden
+- JSON-Parsing: Regex/Pattern – extrahiert `nativeEndpoint`-Blöcke, je Eintrag `uri` und `alias`-Flag
+- Bei `alias = true`: Alias-Auflösung via `resolveAlias()` (s.u.)
+- Gibt leere Liste zurück wenn kein `nativeEndpoint`-Feld vorhanden
 
----
+#### 2b. Neue Methode `resolveAlias()`
 
-### 3. Neuer Service: `EndpointCheckService`
-
-Führt den HTTP-Check gegen einen einzelnen Endpoint durch:
+Ruft `GET /rest/apigateway/alias/{aliasId}` auf und gibt die `endPointURI` zurück:
 
 ```java
-public class EndpointCheckService {
-    private static final int CONNECT_TIMEOUT_MS = 10_000;
-    private static final int READ_TIMEOUT_MS    = 15_000;
-
-    /**
-     * @param apiName    Name der API (wird 1:1 in das Ergebnis übernommen)
-     * @param apiVersion Version der API (wird 1:1 in das Ergebnis übernommen)
-     * @param url        Gateway-Endpoint-URL
-     */
-    public EndpointCheckResult check(String apiName, String apiVersion, String url)
-}
+/**
+ * Löst einen Endpoint-Alias auf und gibt die endPointURI zurück.
+ * Gibt null zurück wenn der Alias nicht vom Typ "endpoint" ist oder nicht gefunden.
+ */
+String resolveAlias(ServerConfig server, String aliasName) throws IOException
 ```
 
 **Implementierungsdetails:**
-- `HttpURLConnection` / `HttpsURLConnection` – nur JDK-Boardmittel
-- Trust-All SSLContext (analog zu `AgwApiService`)
-- Methode: `HEAD`; bei HTTP 405 erneuter Versuch mit `GET`
-- `reachable = (httpStatus >= 200 && httpStatus < 400)`
-- Bei `IOException`: `EndpointCheckResult(apiName, apiVersion, url, 0, false, e.getMessage())`
+- URL: `<resolveBaseUrl(server)>/rest/apigateway/alias/<aliasName>`
+- Parst `"endPointURI"` aus der Response via Regex
+- Gibt `null` zurück bei HTTP 404 oder fehlendem `endPointURI`-Feld
+
+#### 2c. Bestehende Methode `getEndpoints()` – wird ersetzt
+
+`getEndpoints()` wird durch `getNativeEndpoints()` ersetzt.
+Die Methode `getEndpoints()` wird entfernt (oder als deprecated markiert, bis alle Aufrufer umgestellt sind).
 
 ---
 
-### 4. Neuer Formatter: `EndpointCheckResultFormatter`
+### 3. Anzeige des Routing-Endpoints in der API-Liste
 
-Formatiert `List<EndpointCheckResult>` als Tabelle. Bei einem Einzel-API-Check
-wird der API-Name in der Überschrift ausgegeben; bei „Alle APIs" entfällt die
-Einzelüberschrift, stattdessen erscheint eine **API**-Spalte in der Tabelle.
-
-Signatur:
-
-```java
-public class EndpointCheckResultFormatter {
-    /**
-     * @param serverLabel  Hostname des Servers (für die Überschrift)
-     * @param results      Liste aller Endpoint-Ergebnisse (kann mehrere APIs enthalten)
-     */
-    public String format(String serverLabel, List<EndpointCheckResult> results)
-}
-```
-
-Die Methode erkennt automatisch, ob die Ergebnisse von einer oder mehreren
-APIs stammen (`distinct apiName`-Anzahl):
-
-- **Eine API** → Überschrift mit API-Name, keine API-Spalte in der Tabelle
-- **Mehrere APIs** → generische Überschrift, zusätzliche Spalte `API` (Name + Version)
-
-Ausgabe **eine API**:
-```
-Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
-─────────────────────────────────────────────────────────────────────────────
-  URL                                               Status  Erreichbar
-  ───────────────────────────────────────────────────────────────────────────
-  https://agw-host:443/gateway/CustomerAPI/v1       200     JA
-  http://agw-host:5555/gateway/CustomerAPI/v1         0     NEIN  (Connection refused)
-─────────────────────────────────────────────────────────────────────────────
-  2 Endpoints geprüft, 1 erreichbar
-```
-
-Ausgabe **alle APIs**:
-```
-Endpoint-Check für alle APIs auf vm40757.linux.oebb.at
-─────────────────────────────────────────────────────────────────────────────────────────
-  API                       URL                                           Status  Erreichbar
-  ─────────────────────────────────────────────────────────────────────────────────────────
-  CustomerAPI v1            https://agw-host:443/gateway/CustomerAPI/v1   200     JA
-  OrderService v2           https://agw-host:443/gateway/OrderService/v2  404     NEIN
-  OrderService v2           http://agw-host:5555/gateway/OrderService/v2    0     NEIN  (timeout)
-─────────────────────────────────────────────────────────────────────────────────────────
-  3 Endpoints geprüft, 1 erreichbar
-```
-
-Spaltenbreiten werden dynamisch angepasst (analog zu `ApiInfoFormatter`).
-
----
-
-### 5. `InteractiveMenu` – Erweiterung
-
-Änderungen in `runActionMenu()`:
-
-- Option `[4] Endpoint-Check` ergänzen
-- Ablauf:
-  1. Server auswählen (wie bei `[3]`, via `selectServer()`)
-  2. API-Liste laden via `agwApiService.listApis(server)`
-  3. API-Auswahlmenü anzeigen – mit Option `[a] Alle APIs` zusätzlich zu den
-     nummerierten Einzeleinträgen und `[b] Zurück`
-  4. Für die gewählte(n) API(s): Endpoints abrufen via
-     `agwApiService.getEndpoints(server, api.getId())`
-     (bei „Alle": Schleife über alle APIs)
-  5. Check aller gesammelten Endpoints via `endpointCheckService.check(apiName, apiVersion, url)`
-  6. Ausgabe via `endpointCheckResultFormatter.format(server.getHost(), results)`
-
-API-Auswahlmenü (Beispiel):
+In `InteractiveMenu.selectApis()` wird beim Anzeigen der API-Liste zusätzlich der
+Routing-Endpoint-Name angezeigt:
 
 ```
 API auswählen für vm40757.linux.oebb.at:
-  [1]  CustomerAPI          v1    REST
-  [2]  OrderService         v2    REST
-  [3]  LegacyCalcService    10.3  SOAP
+  [1]  CustomerAPI          v1    REST    → MystageEndpoint (Alias)
+  [2]  OrderService         v2    REST    → https://backend:8080/order (direkt)
+  [3]  LegacyCalcService    10.3  SOAP    → (kein Endpoint)
   [a]  Alle APIs
   [b]  Zurück
 Auswahl:
 ```
 
-Neue private Methoden:
+Dazu wird pro API ein zusätzlicher Aufruf `getNativeEndpoints()` gemacht,
+um den ersten Endpoint-Eintrag für die Anzeige zu ermitteln.
 
-```java
-/**
- * Zeigt die API-Liste mit [a]-Option für alle.
- * Gibt eine Liste mit einer API zurück (Einzelauswahl),
- * die volle Liste (Alle) oder null bei Abbruch.
- */
-private List<ApiInfo> selectApis(ServerConfig server)
+> **Hinweis:** Dieser zusätzliche Aufruf macht die API-Liste langsamer.
+> Die Anzeige kann optional mit einer Ladezeile `"Lade Routing-Endpoints ..."` versehen werden.
 
-/** Führt den Endpoint-Check für eine oder mehrere APIs durch und gibt das Ergebnis aus. */
-private void runEndpointCheck(ServerConfig server, List<ApiInfo> apis)
+---
+
+### 4. Schritt 2 im Endpoint-Check: Alias prüfen
+
+In `InteractiveMenu.runEndpointCheck()` wird der Ablauf angepasst:
+
+1. `getNativeEndpoints(server, api.getId())` aufrufen
+2. Pro `RoutingEndpoint`:
+   - Wenn `isAlias = true`: Alias-Name anzeigen + aufgelöste URL für den Check verwenden
+   - Wenn `isAlias = false`: direkte URL für den Check verwenden
+3. `endpointCheckService.check(apiName, apiVersion, resolvedUrl)` aufrufen
+4. Ergebnis ausgeben
+
+---
+
+### 5. Erweiterung `EndpointCheckResultFormatter`
+
+Der Formatter zeigt zusätzlich den Alias-Namen an, wenn vorhanden:
+
+```
+Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
+─────────────────────────────────────────────────────────────────────────────
+  Routing Endpoint         Alias          URL                      Status  OK
+  ─────────────────────────────────────────────────────────────────────────
+  MystageEndpoint          (Alias)        https://myDevstage:9090  200     JA
+  https://backend:8080     (direkt)       https://backend:8080       0     NEIN (timeout)
+─────────────────────────────────────────────────────────────────────────────
+  2 Endpoints geprüft, 1 erreichbar
 ```
 
-Neue Felder in `InteractiveMenu`:
-
-```java
-private final EndpointCheckService endpointCheckService = new EndpointCheckService();
-private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
-```
+Anpassung von `EndpointCheckResult`: Feld `aliasName` (nullable) hinzufügen.
 
 ---
 
@@ -307,61 +298,71 @@ private final EndpointCheckResultFormatter endpointCheckFormatter = new Endpoint
 
 | Test-Klasse                             | Inhalt                                                                                      |
 |-----------------------------------------|---------------------------------------------------------------------------------------------|
-| `EndpointCheckResultTest.java`          | Konstruktor + Getter (inkl. `apiName`, `apiVersion`)                                        |
-| `EndpointCheckResultFormatterTest.java` | Einzel-API: Überschrift mit Name, keine API-Spalte; Alle APIs: API-Spalte vorhanden; leer   |
-| `AgwApiServiceTest.java`                | Erweiterung: `parseEndpoints()` / `getEndpoints()` mit Testdaten                           |
-| `EndpointCheckServiceTest.java`         | Mock-HTTP-Server (lokaler ServerSocket) – prüft HEAD/GET-Fallback, 2xx/4xx                 |
-| `InteractiveMenuTest.java`              | Erweiterung: `[4]` → Einzelauswahl; `[4]` → `[a]` Alle APIs                               |
+| `AgwApiServiceTest.java`                | `parseNativeEndpoints()` mit alias=false; alias=true; `resolveAlias()` mit gültigem/nicht gefundenem Alias |
+| `EndpointCheckResultTest.java`          | Erweiterung: `aliasName`-Feld                                                               |
+| `EndpointCheckResultFormatterTest.java` | Alias-Anzeige in der Tabelle                                                                |
+| `InteractiveMenuTest.java`              | `[4]` → Routing-Endpoint-Anzeige in API-Liste; Alias wird aufgelöst und geprüft            |
 
 ---
 
 ## Tabellenausgabe – Beispiele
 
-**Einzelne API:**
+**Mit Alias:**
 ```
 Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
-─────────────────────────────────────────────────────────────────────────────────────
-  URL                                                            Status  Erreichbar
-  ─────────────────────────────────────────────────────────────────────────────────
-  https://apigateway-oh-dev.oebb.at:443/gateway/CustomerAPI/v1   200     JA
-  http://apigateway-oh-dev.oebb.at:5555/gateway/CustomerAPI/v1     0     NEIN  (Connection refused)
-─────────────────────────────────────────────────────────────────────────────────────
-  2 Endpoints geprüft, 1 erreichbar
+─────────────────────────────────────────────────────────────────────────
+  Alias / Endpoint              URL                           Status  OK
+  ───────────────────────────────────────────────────────────────────────
+  MystageEndpoint (Alias)       https://myDevstage:9090       200     JA
+─────────────────────────────────────────────────────────────────────────
+  1 Endpoint geprüft, 1 erreichbar
+```
+
+**Direkte URL:**
+```
+Endpoint-Check für OrderService v2 auf vm40757.linux.oebb.at
+─────────────────────────────────────────────────────────────────────────
+  Alias / Endpoint              URL                           Status  OK
+  ───────────────────────────────────────────────────────────────────────
+  https://backend:8080/order    (direkt)                      200     JA
+─────────────────────────────────────────────────────────────────────────
+  1 Endpoint geprüft, 1 erreichbar
 ```
 
 **Alle APIs:**
 ```
 Endpoint-Check für alle APIs auf vm40757.linux.oebb.at
-──────────────────────────────────────────────────────────────────────────────────────────────────
-  API                         URL                                                    Status  Erreichbar
-  ────────────────────────────────────────────────────────────────────────────────────────────────
-  CustomerAPI v1              https://apigateway-oh-dev.oebb.at:443/gateway/CustomerAPI/v1   200  JA
-  OrderService v2             https://apigateway-oh-dev.oebb.at:443/gateway/OrderService/v2  404  NEIN
-  LegacyCalcService v10.3     http://apigateway-oh-dev.oebb.at:5555/gateway/LegacyCalcService  0  NEIN  (timeout)
-──────────────────────────────────────────────────────────────────────────────────────────────────
-  3 Endpoints geprüft, 1 erreichbar
+────────────────────────────────────────────────────────────────────────────────────────────
+  API                     Alias / Endpoint             URL                        Status  OK
+  ────────────────────────────────────────────────────────────────────────────────────────
+  CustomerAPI v1          MystageEndpoint (Alias)      https://myDevstage:9090    200     JA
+  OrderService v2         https://backend:8080/order   (direkt)                   404     NEIN
+────────────────────────────────────────────────────────────────────────────────────────────
+  2 Endpoints geprüft, 1 erreichbar
 ```
 
 ---
 
 ## Reihenfolge der Implementierung
 
-1. [ ] Neues Datenmodell `EndpointCheckResult` anlegen (mit `apiName`, `apiVersion`)
-2. [ ] `AgwApiService` erweitern: Methode `getEndpoints(server, apiId)`
-3. [ ] Neuen Service `EndpointCheckService` implementieren (HTTP HEAD/GET)
-4. [ ] `EndpointCheckResultFormatter` implementieren (Einzel- und Alle-Modus)
-5. [ ] `InteractiveMenu` erweitern (Option [4], `selectApis()` mit `[a]`-Option, `runEndpointCheck()`)
-6. [ ] Tests schreiben: `EndpointCheckResultFormatterTest`, `AgwApiServiceTest` (Erweiterung), `EndpointCheckServiceTest`, `InteractiveMenuTest` (Erweiterung)
-7. [ ] Build + alle Tests grün (`./gradlew test`)
-8. [ ] Manueller Test mit echtem Server
+1. [x] Neues Datenmodell `RoutingEndpoint` anlegen
+2. [x] `AgwApiService` erweitern: `getNativeEndpoints()` + `resolveAlias()`
+3. [x] Bestehende `getEndpoints()`-Methode entfernen und Aufrufer umstellen
+4. [x] `EndpointCheckResult` erweitern: Feld `aliasName` (nullable)
+5. [x] `EndpointCheckResultFormatter` anpassen: Alias-Spalte
+6. [x] `InteractiveMenu.selectApis()` anpassen: Routing-Endpoint-Name in API-Liste anzeigen
+7. [x] `InteractiveMenu.runEndpointCheck()` anpassen: Alias-Auflösung nutzen
+8. [x] Tests anpassen: `AgwApiServiceTest`, `EndpointCheckResultFormatter`, `InteractiveMenuTest`
+9. [x] Build + alle Tests grün (`./gradlew test`)
+10. [ ] Manueller Test mit echtem Server
 
 ---
 
 ## Nicht im Scope dieses Issues
 
-- Anzeige aller Endpoints einer API (Detailansicht, Pfade, Methoden)
-- Authentifizierung beim Endpoint-Check (Consumer-Credentials)
+- Andere Alias-Typen als `endpoint` (z.B. `httpTransportSecurityAlias`)
 - Paginierung bei > 750 APIs in der Auswahlliste
 - Parallelisierung der Endpoint-Checks
 - Farb-Ausgabe / ANSI-Codes
 - Persistierung von Ergebnissen
+- Authentifizierung beim HTTP-Check

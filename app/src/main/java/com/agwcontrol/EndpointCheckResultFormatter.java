@@ -44,20 +44,43 @@ public class EndpointCheckResultFormatter {
     }
 
     private void formatSingleApi(StringBuilder sb, List<EndpointCheckResult> results) {
-        int urlWidth    = Math.max(3, results.stream().mapToInt(r -> r.getUrl().length()).max().orElse(0));
-        int statusWidth = 6; // "Status"
+        int aliasWidth  = aliasColumnWidth(results);
+        boolean hasAlias = aliasWidth > 0;
+        int urlWidth    = Math.max(3, results.stream()
+                .filter(r -> r.getUrl() != null)
+                .mapToInt(r -> r.getUrl().length()).max().orElse(0));
+        int statusWidth = 6;
 
-        String rowFmt   = "  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
-        int lineWidth   = 2 + urlWidth + 2 + statusWidth + 2 + 10;
-        String sep      = "─".repeat(lineWidth);
+        String rowFmt;
+        int lineWidth;
+        if (hasAlias) {
+            rowFmt = "  %-" + aliasWidth + "s  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
+            lineWidth = 2 + aliasWidth + 2 + urlWidth + 2 + statusWidth + 2 + 10;
+        } else {
+            rowFmt = "  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
+            lineWidth = 2 + urlWidth + 2 + statusWidth + 2 + 10;
+        }
+        String sep = "─".repeat(lineWidth);
 
         sb.append(sep).append("\n");
-        sb.append(String.format(rowFmt, "URL", "Status", "Erreichbar"));
+        if (hasAlias) {
+            sb.append(String.format(rowFmt, "Alias / Endpoint", "URL", "Status", "Erreichbar"));
+        } else {
+            sb.append(String.format(rowFmt, "URL", "Status", "Erreichbar"));
+        }
         sb.append(sep).append("\n");
         for (EndpointCheckResult r : results) {
             String status = r.getHttpStatus() == 0 ? "-" : String.valueOf(r.getHttpStatus());
             String reach  = r.isReachable() ? "JA" : reachableNo(r);
-            sb.append(String.format(rowFmt, r.getUrl(), status, reach));
+            if (hasAlias) {
+                String label = r.getAliasName() != null
+                        ? r.getAliasName() + " (Alias)"
+                        : nullSafe(r.getUrl());
+                String displayUrl = r.getAliasName() != null ? nullSafe(r.getUrl()) : "(direkt)";
+                sb.append(String.format(rowFmt, label, displayUrl, status, reach));
+            } else {
+                sb.append(String.format(rowFmt, nullSafe(r.getUrl()), status, reach));
+            }
         }
         sb.append(sep).append("\n");
     }
@@ -66,23 +89,58 @@ public class EndpointCheckResultFormatter {
         int apiWidth    = Math.max(3, results.stream()
                 .mapToInt(r -> (r.getApiName() + " " + nullSafe(r.getApiVersion())).trim().length())
                 .max().orElse(0));
-        int urlWidth    = Math.max(3, results.stream().mapToInt(r -> r.getUrl().length()).max().orElse(0));
-        int statusWidth = 6; // "Status"
+        int aliasWidth  = aliasColumnWidth(results);
+        boolean hasAlias = aliasWidth > 0;
+        int urlWidth    = Math.max(3, results.stream()
+                .filter(r -> r.getUrl() != null)
+                .mapToInt(r -> r.getUrl().length()).max().orElse(0));
+        int statusWidth = 6;
 
-        String rowFmt = "  %-" + apiWidth + "s  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
-        int lineWidth = 2 + apiWidth + 2 + urlWidth + 2 + statusWidth + 2 + 10;
-        String sep    = "─".repeat(lineWidth);
+        String rowFmt;
+        int lineWidth;
+        if (hasAlias) {
+            rowFmt = "  %-" + apiWidth + "s  %-" + aliasWidth + "s  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
+            lineWidth = 2 + apiWidth + 2 + aliasWidth + 2 + urlWidth + 2 + statusWidth + 2 + 10;
+        } else {
+            rowFmt = "  %-" + apiWidth + "s  %-" + urlWidth + "s  %-" + statusWidth + "s  %s%n";
+            lineWidth = 2 + apiWidth + 2 + urlWidth + 2 + statusWidth + 2 + 10;
+        }
+        String sep = "─".repeat(lineWidth);
 
         sb.append(sep).append("\n");
-        sb.append(String.format(rowFmt, "API", "URL", "Status", "Erreichbar"));
+        if (hasAlias) {
+            sb.append(String.format(rowFmt, "API", "Alias / Endpoint", "URL", "Status", "Erreichbar"));
+        } else {
+            sb.append(String.format(rowFmt, "API", "URL", "Status", "Erreichbar"));
+        }
         sb.append(sep).append("\n");
         for (EndpointCheckResult r : results) {
             String apiLabel = (r.getApiName() + " " + nullSafe(r.getApiVersion())).trim();
             String status   = r.getHttpStatus() == 0 ? "-" : String.valueOf(r.getHttpStatus());
             String reach    = r.isReachable() ? "JA" : reachableNo(r);
-            sb.append(String.format(rowFmt, apiLabel, r.getUrl(), status, reach));
+            if (hasAlias) {
+                String label = r.getAliasName() != null
+                        ? r.getAliasName() + " (Alias)"
+                        : nullSafe(r.getUrl());
+                String displayUrl = r.getAliasName() != null ? nullSafe(r.getUrl()) : "(direkt)";
+                sb.append(String.format(rowFmt, apiLabel, label, displayUrl, status, reach));
+            } else {
+                sb.append(String.format(rowFmt, apiLabel, nullSafe(r.getUrl()), status, reach));
+            }
         }
         sb.append(sep).append("\n");
+    }
+
+    /** Berechnet die Breite der Alias-Spalte; 0 wenn keine Ergebnisse einen Alias haben. */
+    private int aliasColumnWidth(List<EndpointCheckResult> results) {
+        boolean anyAlias = results.stream().anyMatch(r -> r.getAliasName() != null);
+        if (!anyAlias) return 0;
+        // "Alias / Endpoint" als Mindestbreite; sonst max(aliasName + " (Alias)")
+        return Math.max("Alias / Endpoint".length(),
+                results.stream()
+                        .filter(r -> r.getAliasName() != null)
+                        .mapToInt(r -> r.getAliasName().length() + " (Alias)".length())
+                        .max().orElse(0));
     }
 
     private String reachableNo(EndpointCheckResult r) {

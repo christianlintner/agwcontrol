@@ -109,39 +109,63 @@ class AgwApiServiceTest {
     }
 
     // ---------------------------------------------------------------
-    // parseEndpoints
+    // parseNativeEndpoints
     // ---------------------------------------------------------------
 
     @Test
-    void parseEndpointsEmptyWhenFieldAbsent() {
+    void parseNativeEndpointsEmptyWhenFieldAbsent() {
         String json = "{\"apiResponse\":{\"api\":{},\"responseStatus\":\"SUCCESS\"}}";
-        assertTrue(service.parseEndpoints(json).isEmpty());
+        assertTrue(service.parseNativeEndpoints(json).isEmpty());
     }
 
     @Test
-    void parseEndpointsEmptyArray() {
-        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[],\"responseStatus\":\"SUCCESS\"}}";
-        assertTrue(service.parseEndpoints(json).isEmpty());
-    }
-
-    @Test
-    void parseEndpointsSingleUrl() {
-        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[\"https://agw:443/gateway/API/v1\"],\"responseStatus\":\"SUCCESS\"}}";
-        List<String> eps = service.parseEndpoints(json);
+    void parseNativeEndpointsDirectUrl() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"https://backend:8080/service\",\"alias\":false,\"connectionTimeoutDuration\":0}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
         assertEquals(1, eps.size());
-        assertEquals("https://agw:443/gateway/API/v1", eps.get(0));
+        assertEquals("https://backend:8080/service", eps.get(0).uri);
+        assertFalse(eps.get(0).alias);
     }
 
     @Test
-    void parseEndpointsMultipleUrls() {
-        String json = "{\"apiResponse\":{\"gatewayEndPoints\":[" +
-                "\"https://agw:443/gateway/API/v1\"," +
-                "\"http://agw:5555/gateway/API/v1\"" +
-                "],\"responseStatus\":\"SUCCESS\"}}";
-        List<String> eps = service.parseEndpoints(json);
+    void parseNativeEndpointsAliasTrue() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"MystageEndpoint\",\"alias\":true,\"connectionTimeoutDuration\":0}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("MystageEndpoint", eps.get(0).uri);
+        assertTrue(eps.get(0).alias);
+    }
+
+    @Test
+    void parseNativeEndpointsMultipleEntries() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"https://a:8080/svc\",\"alias\":false}," +
+                "{\"uri\":\"MyAlias\",\"alias\":true}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
         assertEquals(2, eps.size());
-        assertEquals("https://agw:443/gateway/API/v1", eps.get(0));
-        assertEquals("http://agw:5555/gateway/API/v1", eps.get(1));
+        assertFalse(eps.get(0).alias);
+        assertTrue(eps.get(1).alias);
+    }
+
+    // ---------------------------------------------------------------
+    // parseEndPointURI
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseEndPointURIFound() {
+        String json = "{\"id\":\"abc\",\"endPointURI\":\"https://myDevstage:9090\",\"name\":\"MystageEndpoint\",\"type\":\"endpoint\"}";
+        assertEquals("https://myDevstage:9090", service.parseEndPointURI(json));
+    }
+
+    @Test
+    void parseEndPointURIAbsent() {
+        String json = "{\"id\":\"abc\",\"name\":\"SomeAlias\",\"type\":\"simple\"}";
+        assertNull(service.parseEndPointURI(json));
     }
 
 }

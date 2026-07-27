@@ -31,7 +31,7 @@ public class EndpointCheckService {
             }
             boolean reachable = status >= 200 && status < 400;
             return new EndpointCheckResult(apiName, apiVersion, url, status, reachable, "");
-        } catch (IOException e) {
+        } catch (Exception e) {
             return new EndpointCheckResult(apiName, apiVersion, url, 0, false, e.getMessage());
         }
     }
