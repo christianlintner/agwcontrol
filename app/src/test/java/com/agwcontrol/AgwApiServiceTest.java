@@ -168,4 +168,96 @@ class AgwApiServiceTest {
         assertNull(service.parseEndPointURI(json));
     }
 
+    // ---------------------------------------------------------------
+    // listApis mit DB-Cache
+    // ---------------------------------------------------------------
+
+    @Test
+    void listApisReturnsDbDataWhenCacheEnabled() throws Exception {
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+        db.saveApis("PROD", List.of(new ApiInfo("id-1", "CachedApi", "1.0", "REST", true)));
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // → useDb = true
+
+        String[] hint = new String[1];
+        List<ApiInfo> result = service.listApis(null, "PROD", db, cache, hint);
+
+        assertEquals(1, result.size());
+        assertEquals("CachedApi", result.get(0).getName());
+        assertEquals("DB", hint[0]);
+    }
+
+    @Test
+    void listApisFallsBackToServerWhenDbEmpty() throws Exception {
+        // DB ist leer → Fallback auf Server erwartet
+        // Da kein echter Server vorhanden ist, erwarten wir eine IOException
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // → useDb = true, aber DB leer
+
+        String[] hint = new String[1];
+        assertThrows(Exception.class, () ->
+            service.listApis(new ServerConfig("127.0.0.1", 1, "u", "p", "http://127.0.0.1:1"),
+                             "PROD", db, cache, hint));
+        // hint muss auf Fallback hinweisen
+        assertEquals("Cache leer – lade vom Server", hint[0]);
+    }
+
+    @Test
+    void listApisHintIsServerWhenCacheDisabled() throws Exception {
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+
+        DbCacheConfig cache = new DbCacheConfig(); // useDb = false
+
+        String[] hint = new String[1];
+        assertThrows(Exception.class, () ->
+            service.listApis(new ServerConfig("127.0.0.1", 1, "u", "p", "http://127.0.0.1:1"),
+                             "PROD", db, cache, hint));
+        assertEquals("Server", hint[0]);
+    }
+
+    // ---------------------------------------------------------------
+    // getNativeEndpoints mit DB-Cache
+    // ---------------------------------------------------------------
+
+    @Test
+    void getNativeEndpointsReturnsDbDataWhenCacheEnabled() throws Exception {
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+        db.saveEndpoints("PROD", "id-1",
+            List.of(RoutingEndpoint.direct("https://cached-backend:8080")));
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // → useDb = true
+
+        String[] hint = new String[1];
+        List<RoutingEndpoint> result = service.getNativeEndpoints(
+            null, "id-1", "PROD", db, cache, hint);
+
+        assertEquals(1, result.size());
+        assertEquals("https://cached-backend:8080", result.get(0).getResolvedUrl());
+        assertEquals("DB", hint[0]);
+    }
+
+    @Test
+    void getNativeEndpointsFallsBackWhenDbEmpty() throws Exception {
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // → useDb = true, aber DB leer
+
+        String[] hint = new String[1];
+        assertThrows(Exception.class, () ->
+            service.getNativeEndpoints(
+                new ServerConfig("127.0.0.1", 1, "u", "p", "http://127.0.0.1:1"),
+                "id-1", "PROD", db, cache, hint));
+        assertEquals("Cache leer – lade vom Server", hint[0]);
+    }
+
 }

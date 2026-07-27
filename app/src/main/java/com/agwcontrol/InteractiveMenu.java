@@ -3,6 +3,7 @@ package com.agwcontrol;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.sql.SQLException;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -24,12 +25,25 @@ public class InteractiveMenu {
     private final EndpointCheckService endpointCheckService = new EndpointCheckService();
     private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
 
+    private final ApiDatabase apiDatabase;
+    private final DbCacheConfig cacheConfig = new DbCacheConfig();
+
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out) {
+        this(groups, in, out, "agwcontrol.db");
+    }
+
+    public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out, String dbPath) {
         this.groups = groups;
         this.scanner = new Scanner(in);
         this.out = out;
+        this.apiDatabase = new ApiDatabase(dbPath);
+        try {
+            this.apiDatabase.initSchema();
+        } catch (SQLException e) {
+            this.out.println("Warnung: Datenbank konnte nicht initialisiert werden: " + e.getMessage());
+        }
     }
 
     private String ts() {
@@ -86,12 +100,31 @@ public class InteractiveMenu {
         int totalServers = selected.stream().mapToInt(g -> g.getServers().size()).sum();
 
         while (true) {
+            // Ermittle Umgebungsname für den DB-leer-Hinweis
+            String envName = selected.size() == 1 ? selected.get(0).getName() : "alle";
+            String dbHint = "";
+            if (!cacheConfig.isUseDbForApis()) {
+                // Prüfe ob DB bereits Daten für diese Umgebung hat
+                boolean hasData = false;
+                try {
+                    hasData = selected.size() == 1
+                            && !apiDatabase.loadApis(selected.get(0).getName()).isEmpty();
+                } catch (SQLException ignored) {}
+                if (!hasData) {
+                    dbHint = "  ⚠ noch keine Daten für " + envName;
+                }
+            }
+
             out.println();
-            out.println("Aktion für " + label + " (" + totalServers + " Server):");
+            out.println("Aktion für " + label + " (" + totalServers + " Server):"
+                    + "  Cache-Modus: [" + cacheConfig.label() + "]");
             out.println("  [1]  Ping");
             out.println("  [2]  TCP-Check");
             out.println("  [3]  APIs auflisten");
             out.println("  [4]  Endpoint-Check");
+            out.println("  ─────────────────────────────────────");
+            out.println("  [c]  Cache umschalten  →  würde wechseln zu: "
+                    + cacheConfig.labelAfterToggle() + dbHint);
             out.println("  [b]  Zurück");
             out.println("  [q]  Beenden");
             out.print("Auswahl: ");
@@ -104,6 +137,10 @@ public class InteractiveMenu {
             if ("b".equalsIgnoreCase(input)) {
                 return;
             }
+            if ("c".equalsIgnoreCase(input)) {
+                cacheConfig.toggleAll();
+                continue;
+            }
             if ("1".equals(input)) {
                 runPing(selected);
                 return;
@@ -115,21 +152,21 @@ public class InteractiveMenu {
             if ("3".equals(input)) {
                 ServerConfig server = selectServer(selected);
                 if (server != null) {
-                    runApiList(server);
+                    runApiList(server, envName);
                 }
                 return;
             }
             if ("4".equals(input)) {
                 ServerConfig server = selectServer(selected);
                 if (server != null) {
-                    ApiSelection sel = selectApis(server);
+                    ApiSelection sel = selectApis(server, envName);
                     if (sel != null) {
-                        runEndpointCheck(server, sel);
+                        runEndpointCheck(server, sel, envName);
                     }
                 }
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [b] oder [q] eingeben.");
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [c], [b] oder [q] eingeben.");
         }
     }
 
@@ -208,13 +245,16 @@ public class InteractiveMenu {
      * Routing-Endpoint-Label an, lässt den Nutzer eine oder alle auswählen.
      * Gibt null zurück bei Abbruch.
      */
-    private ApiSelection selectApis(ServerConfig server) {
+    private ApiSelection selectApis(ServerConfig server, String environment) {
         out.println();
-        out.println("Lade API-Liste von " + server.getHost() + " ...");
+        String[] hint = new String[1];
+        out.print("Lade API-Liste von " + server.getHost() + " ...");
         List<ApiInfo> apis;
         try {
-            apis = agwApiService.listApis(server);
+            apis = agwApiService.listApis(server, environment, apiDatabase, cacheConfig, hint);
+            out.println(" [" + hint[0] + "]");
         } catch (IOException e) {
+            out.println();
             out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
             return null;
         }
@@ -254,14 +294,18 @@ public class InteractiveMenu {
      * Schritt 2: Lädt native Endpoints für die gewählten APIs (1 Request pro API),
      * führt den HTTP-Check durch und gibt das Ergebnis aus.
      */
-    private void runEndpointCheck(ServerConfig server, ApiSelection sel) {
+    private void runEndpointCheck(ServerConfig server, ApiSelection sel, String environment) {
         List<EndpointCheckResult> results = new ArrayList<>();
         for (ApiInfo api : sel.apis) {
-            out.println(ts() + "Lade nativen Endpoint für " + api.getName() + " ...");
+            String[] hint = new String[1];
+            out.print(ts() + "Lade nativen Endpoint für " + api.getName() + " ...");
             List<RoutingEndpoint> endpoints;
             try {
-                endpoints = agwApiService.getNativeEndpoints(server, api.getId());
+                endpoints = agwApiService.getNativeEndpoints(
+                        server, api.getId(), environment, apiDatabase, cacheConfig, hint);
+                out.println(" [" + hint[0] + "]");
             } catch (IOException e) {
+                out.println();
                 out.println(ts() + "  Fehler: " + e.getMessage());
                 continue;
             }
@@ -297,13 +341,16 @@ public class InteractiveMenu {
         return s != null ? s : "";
     }
 
-    private void runApiList(ServerConfig server) {
+    private void runApiList(ServerConfig server, String environment) {
         out.println();
-        out.println("Lade APIs von " + server.getHost() + " ...");
+        String[] hint = new String[1];
+        out.print("Lade APIs von " + server.getHost() + " ...");
         try {
-            List<ApiInfo> apis = agwApiService.listApis(server);
+            List<ApiInfo> apis = agwApiService.listApis(server, environment, apiDatabase, cacheConfig, hint);
+            out.println(" [" + hint[0] + "]");
             out.println(apiInfoFormatter.format(server.getHost(), apis));
         } catch (IOException e) {
+            out.println();
             out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
         }
     }
