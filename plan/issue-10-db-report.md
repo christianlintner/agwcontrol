@@ -89,10 +89,23 @@ Kundendaten-API;v1.0;REST;true;MystageEndpoint;https://backend.example.com/kunde
 Kundendaten-API;v1.0;REST;true;MystageEndpoint;https://backend.example.com/kunden;vm30074;false;-1;false;-1;0;false;;2024-06-01T10:00:01Z
 Kundendaten-API;v1.0;REST;true;;https://backend.example.com/kunden/v2;vm30073;true;9;true;6;200;true;;2024-06-01T10:00:02Z
 Auftrags-API;v2.1;REST;true;AuftragAlias;https://auftraege.internal.at/api;vm30073;true;15;true;10;201;true;;2024-06-01T10:00:03Z
+Geosphere_Dataset_API;v1;REST;true;;https://dataset.api.hub.geosphere.at/v1/;vm30073;false;-1;true;0;0;false;"Remote host terminated the handshake";2024-06-01T10:00:04Z
+HIM_SX_IN_DB_API;1.0.0;REST;true;;dummy.dummy;vm30073;false;-1;false;-1;0;false;"Ungültige URL: no protocol: dummy.dummy";2024-06-01T10:00:05Z
+GKB-ASSET_API;2.0;REST;true;;http://localhost:8000;vm30073;true;0;false;-1;0;false;"Connection refused: connect";2024-06-01T10:00:06Z
+GKB-ASSET_API;2.0;REST;true;;http://il-dev.3binfra.int;vm30073;false;-1;false;-1;0;false;"il-dev.3binfra.int";2024-06-01T10:00:07Z
 ```
 
 > Endpoints ohne gespeicherte Check-Ergebnisse erscheinen trotzdem als Zeile –
 > die Check-Spalten (`server_host` bis `checked_at`) bleiben dann leer.
+
+**Fehlerszenarien im Überblick:**
+
+| Szenario | ping_ok | ping_ms | tcp_ok | tcp_ms | http_status | error_msg |
+|---|---|---|---|---|---|---|
+| TLS-Handshake-Fehler | `false` | `-1` | `true` | `0` | `0` | `Remote host terminated the handshake` |
+| Ungültige URL / kein Protokoll | `false` | `-1` | `false` | `-1` | `0` | `Ungültige URL: no protocol: ...` |
+| Localhost / Port nicht offen | `true` | `0` | `false` | `-1` | `0` | `Connection refused: connect` |
+| Host nicht erreichbar | `false` | `-1` | `false` | `-1` | `0` | Hostname (z. B. `il-dev.3binfra.int`) |
 
 ---
 
