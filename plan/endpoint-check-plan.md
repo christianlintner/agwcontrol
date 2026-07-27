@@ -1,4 +1,4 @@
-# Plan: Issue #5 – Endpoint-Check für eine AGW-API
+# Plan: Issue #5 – Endpoint-Check für AGW-APIs
 
 Branch: `feat/issue-5-endpoint-check`
 
@@ -7,7 +7,7 @@ Branch: `feat/issue-5-endpoint-check`
 ## Ziel
 
 Im interaktiven Menü wird eine neue Aktion **„Endpoint-Check"** ergänzt.
-Für eine gewählte API (aus der API-Liste eines Servers) werden deren Gateway-Endpoints
+Für eine oder alle APIs eines gewählten Servers werden deren Gateway-Endpoints
 per HTTP-GET abgerufen und anschließend ein HTTP-Erreichbarkeits-Check
 (HEAD oder GET) gegen jeden Endpoint durchgeführt. Das Ergebnis wird als Tabelle
 auf der Konsole ausgegeben.
@@ -25,8 +25,9 @@ Aktion für OH-DEV (3 Server):
 ```
 
 Bei Auswahl `[4]` wird zunächst ein Server gewählt (wie bei `[3]`),
-dann die API-Liste geladen und eine API ausgewählt,
-anschließend werden die Gateway-Endpoints dieser API abgefragt und geprüft.
+dann die API-Liste geladen. Der Nutzer kann entweder **eine einzelne API**
+oder **alle APIs** (`[a]`) auswählen. Anschließend werden die Gateway-Endpoints
+der gewählten API(s) abgefragt und geprüft.
 
 ---
 
@@ -93,6 +94,8 @@ Ergebnis je Endpoint:
 
 | Feld         | Typ     | Beschreibung                                     |
 |--------------|---------|--------------------------------------------------|
+| `apiName`    | String  | Name der zugehörigen API                         |
+| `apiVersion` | String  | Version der zugehörigen API                      |
 | `url`        | String  | Die geprüfte Endpoint-URL                        |
 | `httpStatus` | int     | HTTP-Statuscode (0 = nicht erreichbar)           |
 | `reachable`  | boolean | true wenn HTTP 2xx oder 3xx                      |
@@ -117,22 +120,30 @@ Ergebnis je Endpoint:
 
 ### 1. Neues Datenmodell: `EndpointCheckResult`
 
-Kapselt das Ergebnis eines HTTP-Checks gegen einen Gateway-Endpoint:
+Kapselt das Ergebnis eines HTTP-Checks gegen einen Gateway-Endpoint.
+Trägt zusätzlich den API-Namen und die Version, damit bei der Ausgabe über
+mehrere APIs hinweg die Zuordnung erhalten bleibt:
 
 ```java
 public class EndpointCheckResult {
+    private final String apiName;
+    private final String apiVersion;
     private final String url;
     private final int httpStatus;
     private final boolean reachable;
     private final String errorMsg;
 
-    public EndpointCheckResult(String url, int httpStatus, boolean reachable, String errorMsg) { ... }
+    public EndpointCheckResult(String apiName, String apiVersion,
+                               String url, int httpStatus,
+                               boolean reachable, String errorMsg) { ... }
 
     // Getter
-    public String getUrl()       { ... }
-    public int getHttpStatus()   { ... }
-    public boolean isReachable() { ... }
-    public String getErrorMsg()  { ... }
+    public String getApiName()    { ... }
+    public String getApiVersion() { ... }
+    public String getUrl()        { ... }
+    public int getHttpStatus()    { ... }
+    public boolean isReachable()  { ... }
+    public String getErrorMsg()   { ... }
 }
 ```
 
@@ -170,7 +181,12 @@ public class EndpointCheckService {
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int READ_TIMEOUT_MS    = 15_000;
 
-    public EndpointCheckResult check(String url)
+    /**
+     * @param apiName    Name der API (wird 1:1 in das Ergebnis übernommen)
+     * @param apiVersion Version der API (wird 1:1 in das Ergebnis übernommen)
+     * @param url        Gateway-Endpoint-URL
+     */
+    public EndpointCheckResult check(String apiName, String apiVersion, String url)
 }
 ```
 
@@ -179,29 +195,57 @@ public class EndpointCheckService {
 - Trust-All SSLContext (analog zu `AgwApiService`)
 - Methode: `HEAD`; bei HTTP 405 erneuter Versuch mit `GET`
 - `reachable = (httpStatus >= 200 && httpStatus < 400)`
-- Bei `IOException`: `EndpointCheckResult(url, 0, false, e.getMessage())`
+- Bei `IOException`: `EndpointCheckResult(apiName, apiVersion, url, 0, false, e.getMessage())`
 
 ---
 
 ### 4. Neuer Formatter: `EndpointCheckResultFormatter`
 
-Formatiert `List<EndpointCheckResult>` als Tabelle:
+Formatiert `List<EndpointCheckResult>` als Tabelle. Bei einem Einzel-API-Check
+wird der API-Name in der Überschrift ausgegeben; bei „Alle APIs" entfällt die
+Einzelüberschrift, stattdessen erscheint eine **API**-Spalte in der Tabelle.
 
+Signatur:
+
+```java
+public class EndpointCheckResultFormatter {
+    /**
+     * @param serverLabel  Hostname des Servers (für die Überschrift)
+     * @param results      Liste aller Endpoint-Ergebnisse (kann mehrere APIs enthalten)
+     */
+    public String format(String serverLabel, List<EndpointCheckResult> results)
+}
+```
+
+Die Methode erkennt automatisch, ob die Ergebnisse von einer oder mehreren
+APIs stammen (`distinct apiName`-Anzahl):
+
+- **Eine API** → Überschrift mit API-Name, keine API-Spalte in der Tabelle
+- **Mehrere APIs** → generische Überschrift, zusätzliche Spalte `API` (Name + Version)
+
+Ausgabe **eine API**:
 ```
 Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
 ─────────────────────────────────────────────────────────────────────────────
-  URL                                             Status  Erreichbar
-  ─────────────────────────────────────────────────────────────────────────
-  https://agw-host:443/gateway/CustomerAPI/v1     200     JA
-  http://agw-host:5555/gateway/CustomerAPI/v1     0       NEIN  (Connection refused)
+  URL                                               Status  Erreichbar
+  ───────────────────────────────────────────────────────────────────────────
+  https://agw-host:443/gateway/CustomerAPI/v1       200     JA
+  http://agw-host:5555/gateway/CustomerAPI/v1         0     NEIN  (Connection refused)
 ─────────────────────────────────────────────────────────────────────────────
   2 Endpoints geprüft, 1 erreichbar
 ```
 
-```java
-public class EndpointCheckResultFormatter {
-    public String format(String apiLabel, List<EndpointCheckResult> results)
-}
+Ausgabe **alle APIs**:
+```
+Endpoint-Check für alle APIs auf vm40757.linux.oebb.at
+─────────────────────────────────────────────────────────────────────────────────────────
+  API                       URL                                           Status  Erreichbar
+  ─────────────────────────────────────────────────────────────────────────────────────────
+  CustomerAPI v1            https://agw-host:443/gateway/CustomerAPI/v1   200     JA
+  OrderService v2           https://agw-host:443/gateway/OrderService/v2  404     NEIN
+  OrderService v2           http://agw-host:5555/gateway/OrderService/v2    0     NEIN  (timeout)
+─────────────────────────────────────────────────────────────────────────────────────────
+  3 Endpoints geprüft, 1 erreichbar
 ```
 
 Spaltenbreiten werden dynamisch angepasst (analog zu `ApiInfoFormatter`).
@@ -216,19 +260,38 @@ Spaltenbreiten werden dynamisch angepasst (analog zu `ApiInfoFormatter`).
 - Ablauf:
   1. Server auswählen (wie bei `[3]`, via `selectServer()`)
   2. API-Liste laden via `agwApiService.listApis(server)`
-  3. API aus der Liste auswählen (`selectApi()`)
-  4. Endpoints abrufen via `agwApiService.getEndpoints(server, api.getId())`
-  5. Check aller Endpoints via `endpointCheckService.check(url)`
-  6. Ausgabe via `endpointCheckResultFormatter.format(...)`
+  3. API-Auswahlmenü anzeigen – mit Option `[a] Alle APIs` zusätzlich zu den
+     nummerierten Einzeleinträgen und `[b] Zurück`
+  4. Für die gewählte(n) API(s): Endpoints abrufen via
+     `agwApiService.getEndpoints(server, api.getId())`
+     (bei „Alle": Schleife über alle APIs)
+  5. Check aller gesammelten Endpoints via `endpointCheckService.check(apiName, apiVersion, url)`
+  6. Ausgabe via `endpointCheckResultFormatter.format(server.getHost(), results)`
+
+API-Auswahlmenü (Beispiel):
+
+```
+API auswählen für vm40757.linux.oebb.at:
+  [1]  CustomerAPI          v1    REST
+  [2]  OrderService         v2    REST
+  [3]  LegacyCalcService    10.3  SOAP
+  [a]  Alle APIs
+  [b]  Zurück
+Auswahl:
+```
 
 Neue private Methoden:
 
 ```java
-/** Zeigt die API-Liste und lässt den Nutzer eine auswählen. Gibt null zurück bei Abbruch. */
-private ApiInfo selectApi(ServerConfig server)
+/**
+ * Zeigt die API-Liste mit [a]-Option für alle.
+ * Gibt eine Liste mit einer API zurück (Einzelauswahl),
+ * die volle Liste (Alle) oder null bei Abbruch.
+ */
+private List<ApiInfo> selectApis(ServerConfig server)
 
-/** Führt den Endpoint-Check für eine API durch und gibt das Ergebnis aus. */
-private void runEndpointCheck(ServerConfig server, ApiInfo api)
+/** Führt den Endpoint-Check für eine oder mehrere APIs durch und gibt das Ergebnis aus. */
+private void runEndpointCheck(ServerConfig server, List<ApiInfo> apis)
 ```
 
 Neue Felder in `InteractiveMenu`:
@@ -242,22 +305,23 @@ private final EndpointCheckResultFormatter endpointCheckFormatter = new Endpoint
 
 ### 6. Tests
 
-| Test-Klasse                          | Inhalt                                                                       |
-|--------------------------------------|------------------------------------------------------------------------------|
-| `EndpointCheckResultTest.java`       | Konstruktor + Getter                                                         |
-| `EndpointCheckResultFormatterTest.java` | Formatierungsausgabe: 1 erreichbar, 1 nicht erreichbar, leer              |
-| `AgwApiServiceTest.java`             | Erweiterung: `parseEndpoints()` / `getEndpoints()` mit Testdaten            |
-| `EndpointCheckServiceTest.java`      | Mock-HTTP-Server (lokaler ServerSocket) – prüft HEAD/GET-Fallback, 2xx/4xx  |
-| `InteractiveMenuTest.java`           | Erweiterung: Option `[4]` navigiert durch Server → API → Endpoints          |
+| Test-Klasse                             | Inhalt                                                                                      |
+|-----------------------------------------|---------------------------------------------------------------------------------------------|
+| `EndpointCheckResultTest.java`          | Konstruktor + Getter (inkl. `apiName`, `apiVersion`)                                        |
+| `EndpointCheckResultFormatterTest.java` | Einzel-API: Überschrift mit Name, keine API-Spalte; Alle APIs: API-Spalte vorhanden; leer   |
+| `AgwApiServiceTest.java`                | Erweiterung: `parseEndpoints()` / `getEndpoints()` mit Testdaten                           |
+| `EndpointCheckServiceTest.java`         | Mock-HTTP-Server (lokaler ServerSocket) – prüft HEAD/GET-Fallback, 2xx/4xx                 |
+| `InteractiveMenuTest.java`              | Erweiterung: `[4]` → Einzelauswahl; `[4]` → `[a]` Alle APIs                               |
 
 ---
 
-## Tabellenausgabe – Beispiel
+## Tabellenausgabe – Beispiele
 
+**Einzelne API:**
 ```
 Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
 ─────────────────────────────────────────────────────────────────────────────────────
-  URL                                                          Status  Erreichbar
+  URL                                                            Status  Erreichbar
   ─────────────────────────────────────────────────────────────────────────────────
   https://apigateway-oh-dev.oebb.at:443/gateway/CustomerAPI/v1   200     JA
   http://apigateway-oh-dev.oebb.at:5555/gateway/CustomerAPI/v1     0     NEIN  (Connection refused)
@@ -265,15 +329,28 @@ Endpoint-Check für CustomerAPI v1 auf vm40757.linux.oebb.at
   2 Endpoints geprüft, 1 erreichbar
 ```
 
+**Alle APIs:**
+```
+Endpoint-Check für alle APIs auf vm40757.linux.oebb.at
+──────────────────────────────────────────────────────────────────────────────────────────────────
+  API                         URL                                                    Status  Erreichbar
+  ────────────────────────────────────────────────────────────────────────────────────────────────
+  CustomerAPI v1              https://apigateway-oh-dev.oebb.at:443/gateway/CustomerAPI/v1   200  JA
+  OrderService v2             https://apigateway-oh-dev.oebb.at:443/gateway/OrderService/v2  404  NEIN
+  LegacyCalcService v10.3     http://apigateway-oh-dev.oebb.at:5555/gateway/LegacyCalcService  0  NEIN  (timeout)
+──────────────────────────────────────────────────────────────────────────────────────────────────
+  3 Endpoints geprüft, 1 erreichbar
+```
+
 ---
 
 ## Reihenfolge der Implementierung
 
-1. [ ] Neues Datenmodell `EndpointCheckResult` anlegen
+1. [ ] Neues Datenmodell `EndpointCheckResult` anlegen (mit `apiName`, `apiVersion`)
 2. [ ] `AgwApiService` erweitern: Methode `getEndpoints(server, apiId)`
 3. [ ] Neuen Service `EndpointCheckService` implementieren (HTTP HEAD/GET)
-4. [ ] `EndpointCheckResultFormatter` implementieren
-5. [ ] `InteractiveMenu` erweitern (Option [4], `selectApi()`, `runEndpointCheck()`)
+4. [ ] `EndpointCheckResultFormatter` implementieren (Einzel- und Alle-Modus)
+5. [ ] `InteractiveMenu` erweitern (Option [4], `selectApis()` mit `[a]`-Option, `runEndpointCheck()`)
 6. [ ] Tests schreiben: `EndpointCheckResultFormatterTest`, `AgwApiServiceTest` (Erweiterung), `EndpointCheckServiceTest`, `InteractiveMenuTest` (Erweiterung)
 7. [ ] Build + alle Tests grün (`./gradlew test`)
 8. [ ] Manueller Test mit echtem Server
