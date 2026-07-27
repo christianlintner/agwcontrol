@@ -49,7 +49,9 @@ Führt für alle Endpoints einer API einen Ping- und TCP-Check durch.
 
 ## Konfiguration
 
-Server werden in einer Datei `server.properties` im aktuellen Arbeitsverzeichnis konfiguriert:
+### Option A — `servers.properties` (Fallback)
+
+Server werden in einer Datei `servers.properties` im aktuellen Arbeitsverzeichnis konfiguriert:
 
 ```properties
 server.1.host=agw-server-1.example.com
@@ -60,6 +62,28 @@ server.2.port=443
 ```
 
 > `port` ist optional und wird standardmäßig auf `443` gesetzt.
+
+### Option B — KeePass 2.x `.kdbx` · [Plan](plan/keepass-config-plan.md)
+
+Server, Ports und Credentials können aus einer KeePass-2.x-Datenbankdatei geladen werden.
+
+**Eintragsformat in KeePass:**
+
+| Feld       | Inhalt                              | Beispiel                                 |
+|------------|-------------------------------------|------------------------------------------|
+| Title      | Hostname des Servers                | `vm40757.linux.oebb.at`                  |
+| URL        | `https://<hostname>:<port>`         | `https://vm40757.linux.oebb.at:443`      |
+| UserName   | Benutzername für den Server         | `agwuser`                                |
+| Password   | Passwort für den Server             | `geheim`                                 |
+
+**CLI-Aufruf mit KeePass:**
+
+```bash
+java -jar agwcontrol.jar ping --kdbx servers.kdbx --kdbx-password MeinPasswort
+java -jar agwcontrol.jar tcp  --kdbx servers.kdbx --kdbx-password MeinPasswort
+```
+
+> Wird `--kdbx` nicht angegeben, wird automatisch `servers.properties` als Fallback verwendet.
 
 ---
 

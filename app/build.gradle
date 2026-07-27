@@ -27,6 +27,9 @@ dependencies {
 
     // This dependency is used by the application.
     implementation libs.guava
+
+    // KeePass 2.x .kdbx support
+    implementation 'de.slackspace:openkeepass:0.8.2'
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
