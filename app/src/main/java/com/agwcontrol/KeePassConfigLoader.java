@@ -2,6 +2,7 @@ package com.agwcontrol;
 
 import de.slackspace.openkeepass.KeePassDatabase;
 import de.slackspace.openkeepass.domain.Entry;
+import de.slackspace.openkeepass.domain.Group;
 import de.slackspace.openkeepass.domain.KeePassFile;
 import de.slackspace.openkeepass.exception.KeePassDatabaseUnreadableException;
 
@@ -14,16 +15,51 @@ import java.util.List;
 
 public class KeePassConfigLoader {
 
-    public List<ServerConfig> load(Path kdbxFile, String masterPassword) throws IOException {
-        KeePassFile db;
-        try {
-            db = KeePassDatabase.getInstance(kdbxFile.toFile()).openDatabase(masterPassword);
-        } catch (KeePassDatabaseUnreadableException e) {
-            throw new IOException("KeePass-Datenbank konnte nicht geöffnet werden: " + e.getMessage(), e);
+    /**
+     * Lädt alle AGW-Server-Gruppen aus der KeePass-Datei.
+     * Jede Sub-Gruppe unter "AGW-Server" wird zu einer {@link ServerGroup}.
+     */
+    public List<ServerGroup> loadGroups(Path kdbxFile, String masterPassword) throws IOException {
+        KeePassFile db = openDatabase(kdbxFile, masterPassword);
+
+        Group agwServerGroup = findAgwServerGroup(db.getRoot());
+        if (agwServerGroup == null) {
+            throw new IOException("Gruppe \"AGW-Server\" wurde in der KeePass-Datei nicht gefunden.");
         }
 
-        List<ServerConfig> result = new ArrayList<>();
-        for (Entry entry : db.getEntries()) {
+        List<ServerGroup> result = new ArrayList<>();
+        for (Group sub : agwServerGroup.getGroups()) {
+            List<ServerConfig> servers = entriesFromGroup(sub);
+            result.add(new ServerGroup(sub.getName(), servers));
+        }
+        return result;
+    }
+
+    private KeePassFile openDatabase(Path kdbxFile, String masterPassword) throws IOException {
+        try {
+            return KeePassDatabase.getInstance(kdbxFile.toFile()).openDatabase(masterPassword);
+        } catch (KeePassDatabaseUnreadableException e) {
+            throw new IOException("KeePass-Datenbank konnte nicht geöffnet werden: " + e.getMessage(), e);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("KeePass-Datei nicht gefunden: " + kdbxFile, e);
+        }
+    }
+
+    /** Sucht rekursiv nach der Gruppe "AGW-Server". */
+    private Group findAgwServerGroup(Group group) {
+        if ("AGW-Server".equals(group.getName())) {
+            return group;
+        }
+        for (Group sub : group.getGroups()) {
+            Group found = findAgwServerGroup(sub);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    private List<ServerConfig> entriesFromGroup(Group group) {
+        List<ServerConfig> servers = new ArrayList<>();
+        for (Entry entry : group.getEntries()) {
             String url = entry.getUrl();
             if (url == null || url.trim().isEmpty()) {
                 System.err.println("Warnung: Eintrag \"" + entry.getTitle() + "\" hat keine URL – wird übersprungen.");
@@ -35,9 +71,9 @@ public class KeePassConfigLoader {
                 System.err.println("Warnung: URL \"" + url + "\" in Eintrag \"" + entry.getTitle() + "\" konnte nicht geparst werden – wird übersprungen.");
                 continue;
             }
-            result.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword()));
+            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword()));
         }
-        return result;
+        return servers;
     }
 
     private String parseHost(String url) {

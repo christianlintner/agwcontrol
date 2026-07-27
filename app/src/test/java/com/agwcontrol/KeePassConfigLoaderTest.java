@@ -22,40 +22,68 @@ class KeePassConfigLoaderTest {
     }
 
     @Test
-    void loadsAllEntries() throws Exception {
-        List<ServerConfig> configs = new KeePassConfigLoader().load(testKdbx(), MASTER_PASSWORD);
-        assertEquals(10, configs.size());
+    void loadsCorrectNumberOfGroups() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        assertEquals(4, groups.size());
+    }
+
+    @Test
+    void ohDevGroupHasThreeServers() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerGroup ohDev = groups.stream()
+                .filter(g -> "OH-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe OH-DEV nicht gefunden"));
+        assertEquals(3, ohDev.getServers().size());
+    }
+
+    @Test
+    void dn2020DevGroupHasOneServer() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerGroup dn = groups.stream()
+                .filter(g -> "DN2020-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe DN2020-DEV nicht gefunden"));
+        assertEquals(1, dn.getServers().size());
+    }
+
+    @Test
+    void groupNameIsPreserved() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        assertTrue(groups.stream().anyMatch(g -> "DN2020-DEV".equals(g.getName())));
+        assertTrue(groups.stream().anyMatch(g -> "OH-DEV".equals(g.getName())));
+        assertTrue(groups.stream().anyMatch(g -> "DN-PREPROD".equals(g.getName())));
+        assertTrue(groups.stream().anyMatch(g -> "OH-PREPROD".equals(g.getName())));
     }
 
     @Test
     void parsesHostAndPort() throws Exception {
-        List<ServerConfig> configs = new KeePassConfigLoader().load(testKdbx(), MASTER_PASSWORD);
-
-        ServerConfig first = configs.stream()
-                .filter(c -> c.getHost().equals("vm40757.linux.oebb.at"))
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerConfig first = groups.stream()
+                .flatMap(g -> g.getServers().stream())
+                .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
-
         assertEquals("vm40757.linux.oebb.at", first.getHost());
         assertEquals(443, first.getPort());
     }
 
     @Test
     void parsesUsernameAndPassword() throws Exception {
-        List<ServerConfig> configs = new KeePassConfigLoader().load(testKdbx(), MASTER_PASSWORD);
-
-        ServerConfig entry = configs.stream()
-                .filter(c -> c.getHost().equals("vm40757.linux.oebb.at"))
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerConfig entry = groups.stream()
+                .flatMap(g -> g.getServers().stream())
+                .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
-
         assertEquals("agwuser", entry.getUsername());
         assertEquals("agwpassword1", entry.getPassword());
     }
 
     @Test
-    void throwsOnWrongPassword() {
+    void throwsOnWrongPassword() throws URISyntaxException {
+        Path kdbx = testKdbx();
         assertThrows(IOException.class,
-                () -> new KeePassConfigLoader().load(testKdbx(), "falschesPasswort"));
+                () -> new KeePassConfigLoader().loadGroups(kdbx, "falschesPasswort"));
     }
 }
