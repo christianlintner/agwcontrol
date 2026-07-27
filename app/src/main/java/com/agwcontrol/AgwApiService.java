@@ -27,7 +27,7 @@ public class AgwApiService {
     /** Ruft GET /rest/apigateway/apis auf und gibt die gefundenen APIs zurück. */
     public List<ApiInfo> listApis(ServerConfig server) throws IOException {
         String baseUrl = resolveBaseUrl(server);
-        URL url = new URL(baseUrl + "/rest/apigateway/apis?size=500");
+        URL url = new URL(baseUrl + "/rest/apigateway/apis?size=750");
 
         HttpURLConnection conn = openConnection(url, server);
         try {
