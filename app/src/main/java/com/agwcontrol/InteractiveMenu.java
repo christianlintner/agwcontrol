@@ -64,9 +64,14 @@ public class InteractiveMenu {
                 continue;
             }
 
+            if ("r".equalsIgnoreCase(input)) {
+                runReport();
+                continue;
+            }
+
             int idx = parseIndex(input);
             if (idx < 1 || idx > groups.size()) {
-                out.println("Ungültige Eingabe. Bitte eine Zahl zwischen 1 und " + groups.size() + ", [a] oder [q] eingeben.");
+                out.println("Ungültige Eingabe. Bitte eine Zahl zwischen 1 und " + groups.size() + ", [a], [r] oder [q] eingeben.");
                 continue;
             }
 
@@ -89,6 +94,8 @@ public class InteractiveMenu {
                     g.getServers().size() == 1 ? "Server" : "Server");
         }
         out.println("  [a]  Alle Umgebungen");
+        out.println("  ─────────────────────────────────────");
+        out.println("  [r]  Report erstellen (CSV)");
         out.println("  [q]  Beenden");
         out.print("Auswahl: ");
     }
@@ -335,6 +342,21 @@ public class InteractiveMenu {
             return;
         }
         out.println(endpointCheckFormatter.format(server.getHost(), results));
+    }
+
+    private void runReport() {
+        out.println();
+        out.print("Ausgabeverzeichnis [.]: ");
+        String dirInput = scanner.nextLine().trim();
+        java.nio.file.Path outputDir = java.nio.file.Path.of(dirInput.isEmpty() ? "." : dirInput);
+        try {
+            int created = new DbReportService(apiDatabase).writeReports(outputDir);
+            if (created == 0) {
+                out.println("Keine Daten in der Datenbank. Bitte zuerst APIs und Endpoints laden.");
+            }
+        } catch (java.sql.SQLException | java.io.IOException e) {
+            out.println("Fehler beim Report: " + e.getMessage());
+        }
     }
 
     private String nullSafe(String s) {

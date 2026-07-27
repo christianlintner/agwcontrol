@@ -185,6 +185,31 @@ class InteractiveMenuTest {
         assertDoesNotThrow(() -> runMenu(twoGroups(), "2\n4\nb\nq\n"));
     }
 
+    // --- Report [r] ---
+
+    @Test
+    void mainMenuShowsReportOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "q\n");
+        String s = out.toString();
+        assertTrue(s.contains("[r]"));
+        assertTrue(s.contains("Report"));
+    }
+
+    @Test
+    void reportWithEmptyDbShowsNoDataMessage() {
+        // Leere DB → Hinweis, kein Absturz
+        // Eingabeverzeichnis leer lassen → aktuelles Verzeichnis
+        ByteArrayOutputStream out = runMenu(singleGroup(), "r\n\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Keine Daten") || s.contains("Erstellt"));
+    }
+
+    @Test
+    void reportDoesNotCrashOnInvalidDir() {
+        // Ungültiges Verzeichnis → Fehlermeldung, kein Absturz
+        assertDoesNotThrow(() -> runMenu(singleGroup(), "r\n/nonexistent/path/xyz\nq\n"));
+    }
+
     // --- Cache-Toggle [c] ---
 
     @Test
