@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -50,6 +51,31 @@ class AppTest {
         Path missing = tempDir.resolve("missing.properties");
         ByteArrayOutputStream err = captureStderr(() ->
                 App.runPing(missing));
+
+        assertTrue(err.toString().contains("Fehler:"));
+    }
+
+    @Test
+    void tcpFlowWithLoopback() throws IOException {
+        try (ServerSocket serverSocket = new ServerSocket(0)) {
+            int port = serverSocket.getLocalPort();
+            Path props = tempDir.resolve("servers-tcp.properties");
+            Files.writeString(props, "server.1.host=127.0.0.1\nserver.1.port=" + port + "\n");
+
+            ByteArrayOutputStream out = captureStdout(() ->
+                    App.runTcpCheck(props));
+
+            String output = out.toString();
+            assertTrue(output.contains("127.0.0.1:" + port), "Host:Port muss in der Ausgabe stehen");
+            assertTrue(output.contains("OPEN"), "Offener Port muss als OPEN erkannt werden");
+        }
+    }
+
+    @Test
+    void tcpFlowMissingConfigPrintsError() {
+        Path missing = tempDir.resolve("missing-tcp.properties");
+        ByteArrayOutputStream err = captureStderr(() ->
+                App.runTcpCheck(missing));
 
         assertTrue(err.toString().contains("Fehler:"));
     }

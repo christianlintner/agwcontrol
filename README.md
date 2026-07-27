@@ -20,9 +20,18 @@ vm30073.linux.gleis.at | OK          |  12ms
 vm30074.linux.gleis.at | UNREACHABLE |   -
 ```
 
-### 2. TCP-Check — Port-Erreichbarkeit prüfen *(geplant)*
+### 2. TCP-Check — Port-Erreichbarkeit prüfen · [Plan](plan/tcp-check-plan.md)
 
-Prüft, ob ein bestimmter Port eines AGW-Servers offen ist (TCP-Connect, vergleichbar mit `telnet host port`).
+Prüft, ob der konfigurierte Port eines AGW-Servers per TCP-Connect erreichbar ist (vergleichbar mit `telnet host port`).
+
+```bash
+java -jar agwcontrol.jar tcp
+```
+
+```
+vm30073.linux.gleis.at:443 | OPEN   |  45ms
+vm30074.linux.gleis.at:443 | CLOSED |   -
+```
 
 ### 3. APIs auflisten *(geplant)*
 
