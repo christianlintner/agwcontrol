@@ -46,7 +46,7 @@ bereit, der die Datei aus dem aktuellen Arbeitsverzeichnis liest und eine Liste 
 - Properties-Format laut README: `server.1.host=...`, `server.1.port=...`
 - Java-Bordmittel: `java.util.Properties`, `java.nio.file.Path`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -73,7 +73,7 @@ Timeout und misst die Antwortzeit.
 - README: „Ping-Prüfung: `InetAddress.isReachable` / ICMP"
 - Package: `com.agwcontrol`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -98,7 +98,7 @@ Formatiert eine Liste von `PingResult`-Objekten als ausgerichtete Tabelle für d
 - Package: `com.agwcontrol`
 - Beispiel-Ausgabe laut Plan: `agw-server-1.example.com | OK | 12ms`
 
-**Status:** [ ] pending
+**Status:** [x] done
 
 ---
 
@@ -131,4 +131,4 @@ koordiniert und das Ergebnis ausgibt.
 - `servers.properties` liegt zur Laufzeit im aktuellen Arbeitsverzeichnis (`./servers.properties`)
 - Exit-Code immer 0
 
-**Status:** [ ] pending
+**Status:** [x] done
