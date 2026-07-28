@@ -263,6 +263,13 @@ public class AgwApiService {
             String block = blockMatcher.group(1);
             String uri = extractString(block, "uri");
             boolean alias = extractBoolean(block, "alias");
+            if ((uri == null || uri.isEmpty() || "dummy.dummy".equalsIgnoreCase(uri))) {
+                String aliasName = extractString(block, "aliasName");
+                if (aliasName != null && !aliasName.isEmpty()) {
+                    uri = aliasName;
+                    alias = true;
+                }
+            }
             if (uri != null && !uri.isEmpty()) {
                 result.add(new NativeEndpointEntry(uri, alias));
             }

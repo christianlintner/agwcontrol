@@ -128,7 +128,8 @@ public class InteractiveMenu {
             out.println("  [1]  Ping");
             out.println("  [2]  TCP-Check");
             out.println("  [3]  APIs auflisten");
-            out.println("  [4]  Endpoint-Check");
+            out.println("  [4]  Endpoints auflisten");
+            out.println("  [5]  Endpoint-Check");
             out.println("  ─────────────────────────────────────");
             out.println("  [c]  Cache umschalten  →  würde wechseln zu: "
                     + cacheConfig.labelAfterToggle() + dbHint);
@@ -168,12 +169,22 @@ public class InteractiveMenu {
                 if (server != null) {
                     ApiSelection sel = selectApis(server, envName);
                     if (sel != null) {
+                        runEndpointList(server, sel, envName);
+                    }
+                }
+                return;
+            }
+            if ("5".equals(input)) {
+                ServerConfig server = selectServer(selected);
+                if (server != null) {
+                    ApiSelection sel = selectApis(server, envName);
+                    if (sel != null) {
                         runEndpointCheck(server, sel, envName);
                     }
                 }
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [c], [b] oder [q] eingeben.");
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [5], [c], [b] oder [q] eingeben.");
         }
     }
 
@@ -294,6 +305,43 @@ public class InteractiveMenu {
                 return new ApiSelection(List.of(apis.get(idx - 1)));
             }
             out.println("Ungültige Eingabe.");
+        }
+    }
+
+    private void runEndpointList(ServerConfig server, ApiSelection sel, String environment) {
+        out.println();
+        boolean foundAny = false;
+        for (ApiInfo api : sel.apis) {
+            String[] hint = new String[1];
+            out.print(ts() + "Lade nativen Endpoint für " + api.getName() + " ...");
+            List<RoutingEndpoint> endpoints;
+            try {
+                endpoints = agwApiService.getNativeEndpoints(
+                        server, api.getId(), environment, apiDatabase, cacheConfig, hint);
+                out.println(" [" + hint[0] + "]");
+            } catch (IOException e) {
+                out.println();
+                out.println(ts() + "  Fehler: " + e.getMessage());
+                continue;
+            }
+            if (endpoints.isEmpty()) {
+                out.println(ts() + "  Kein nativer Endpoint gefunden.");
+                continue;
+            }
+            for (RoutingEndpoint ep : endpoints) {
+                String url = ep.getResolvedUrl();
+                if (url == null || url.isEmpty()) {
+                    out.println(ts() + "  Alias '" + ep.getAliasName() + "' konnte nicht aufgelöst werden.");
+                    continue;
+                }
+                foundAny = true;
+                out.println(ts() + "  " + api.getName() + " " + nullSafe(api.getVersion()).trim()
+                        + ": " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url);
+            }
+        }
+        if (!foundAny) {
+            out.println();
+            out.println("Keine Endpoints gefunden.");
         }
     }
 

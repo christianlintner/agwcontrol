@@ -152,6 +152,28 @@ class AgwApiServiceTest {
         assertTrue(eps.get(1).alias);
     }
 
+    @Test
+    void parseNativeEndpointsUsesAliasNameWhenUriIsDummy() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"dummy.dummy\",\"alias\":false,\"aliasName\":\"RealAlias\"}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("RealAlias", eps.get(0).uri);
+        assertTrue(eps.get(0).alias);
+    }
+
+    @Test
+    void parseNativeEndpointsKeepsDirectUriWhenNoAliasNameExists() {
+        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
+                "{\"uri\":\"dummy.dummy\",\"alias\":false}" +
+                "]}}}";
+        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
+        assertEquals(1, eps.size());
+        assertEquals("dummy.dummy", eps.get(0).uri);
+        assertFalse(eps.get(0).alias);
+    }
+
     // ---------------------------------------------------------------
     // parseEndPointURI
     // ---------------------------------------------------------------
