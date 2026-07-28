@@ -101,6 +101,19 @@ class ApiDatabaseTest {
     }
 
     @Test
+    void loadEndpointsUsesAliasNameAsDirectUrlWhenResolvedUrlMissing() throws SQLException {
+        db.openConnection().createStatement().executeUpdate(
+            "INSERT INTO endpoints (environment, api_id, alias_name, resolved_url, is_alias, loaded_at) VALUES " +
+            "('PROD', 'id-1', 'dummy.dummy', NULL, 0, '2025-01-01T00:00:00Z')"
+        );
+
+        List<RoutingEndpoint> loaded = db.loadEndpoints("PROD", "id-1");
+        assertEquals(1, loaded.size());
+        assertFalse(loaded.get(0).isAlias());
+        assertEquals("dummy.dummy", loaded.get(0).getResolvedUrl());
+    }
+
+    @Test
     void saveEndpointsOverwritesExistingEntries() throws SQLException {
         db.saveEndpoints("PROD", "id-1",
             List.of(RoutingEndpoint.direct("https://old:8080")));

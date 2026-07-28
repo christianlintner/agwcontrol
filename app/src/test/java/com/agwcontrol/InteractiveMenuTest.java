@@ -167,9 +167,27 @@ class InteractiveMenuTest {
         // Port 1 garantiert nicht erreichbar → Fehler beim API-Laden
         List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
                 new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
-        ByteArrayOutputStream out = runMenu(groups, "1\n4\nq\n");
+        ByteArrayOutputStream out = runMenu(groups, "1\n4\nb\nb\nq\n");
         String s = out.toString();
         assertTrue(s.contains("Fehler") || s.contains("Keine APIs") || s.contains("Keine Endpoints"));
+    }
+
+    @Test
+    void endpointListStaysInApiSelectionFlowUntilBack() {
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenu(groups, "1\n4\nb\nb\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("API auswählen") || s.contains("Lade API-Liste") || s.contains("Fehler beim Abrufen der APIs"));
+    }
+
+    @Test
+    void endpointListUsesCompactPromptAfterFirstSelectionScreen() {
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenu(groups, "1\n4\n999\nb\nb\nq\n");
+        String s = out.toString();
+        assertTrue(s.contains("Nächste Auswahl [1-"));
     }
 
     @Test
@@ -254,6 +272,13 @@ class InteractiveMenuTest {
         ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
         assertTrue(out.toString().contains("[c]"));
         assertTrue(out.toString().contains("Cache umschalten"));
+    }
+
+    @Test
+    void actionMenuShowsHttpDebugToggleOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "1\nb\nq\n");
+        assertTrue(out.toString().contains("[d]"));
+        assertTrue(out.toString().contains("HTTP-Debug"));
     }
 
     @Test

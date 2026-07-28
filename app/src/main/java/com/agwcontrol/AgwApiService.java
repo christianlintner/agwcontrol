@@ -7,6 +7,7 @@ import javax.net.ssl.X509TrustManager;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,18 @@ public class AgwApiService {
 
     private static final int CONNECT_TIMEOUT_MS = 5_000;
     private static final int READ_TIMEOUT_MS    = 15_000;
+
+    private final HttpDebugConfig httpDebugConfig;
+    private final PrintStream debugOut;
+
+    public AgwApiService() {
+        this(new HttpDebugConfig(), System.out);
+    }
+
+    public AgwApiService(HttpDebugConfig httpDebugConfig, PrintStream debugOut) {
+        this.httpDebugConfig = httpDebugConfig;
+        this.debugOut = debugOut;
+    }
 
     /**
      * Ruft GET /rest/apigateway/apis/{apiId} auf, liest das nativeEndpoint-Array
@@ -193,6 +206,7 @@ public class AgwApiService {
     }
 
     private HttpURLConnection openConnection(URL url, ServerConfig server) throws IOException {
+        debugRequest(url);
         HttpURLConnection conn;
         if ("https".equalsIgnoreCase(url.getProtocol())) {
             conn = (HttpsURLConnection) url.openConnection();
@@ -215,6 +229,7 @@ public class AgwApiService {
     }
 
     private String readBody(HttpURLConnection conn) throws IOException {
+        debugResponseStatus(conn);
         StringBuilder sb = new StringBuilder();
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
@@ -223,7 +238,27 @@ public class AgwApiService {
                 sb.append(line);
             }
         }
-        return sb.toString();
+        String body = sb.toString();
+        debugResponseBody(body);
+        return body;
+    }
+
+    private void debugRequest(URL url) {
+        if (httpDebugConfig.isEnabled()) {
+            debugOut.println("[HTTP-DEBUG] GET " + url);
+        }
+    }
+
+    private void debugResponseStatus(HttpURLConnection conn) throws IOException {
+        if (httpDebugConfig.isEnabled()) {
+            debugOut.println("[HTTP-DEBUG] Status " + conn.getResponseCode());
+        }
+    }
+
+    private void debugResponseBody(String body) {
+        if (httpDebugConfig.shouldIncludeResponseBody()) {
+            debugOut.println("[HTTP-DEBUG] Body " + body);
+        }
     }
 
     // ---------------------------------------------------------------

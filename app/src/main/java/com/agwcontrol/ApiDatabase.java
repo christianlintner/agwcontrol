@@ -180,7 +180,8 @@ public class ApiDatabase {
     public List<RoutingEndpoint> loadEndpoints(String environment,
                                                 String apiId) throws SQLException {
         String sql = "SELECT alias_name, resolved_url, is_alias " +
-                     "FROM endpoints WHERE environment = ? AND api_id = ?";
+                     "FROM endpoints WHERE environment = ? AND api_id = ? " +
+                     "ORDER BY alias_name, resolved_url";
         List<RoutingEndpoint> result = new ArrayList<>();
         Connection conn = connect();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -194,7 +195,8 @@ public class ApiDatabase {
                     if (isAlias) {
                         result.add(RoutingEndpoint.alias(aliasName, resolvedUrl));
                     } else {
-                        result.add(RoutingEndpoint.direct(resolvedUrl));
+                        String directUrl = resolvedUrl != null ? resolvedUrl : aliasName;
+                        result.add(RoutingEndpoint.direct(directUrl));
                     }
                 }
             }

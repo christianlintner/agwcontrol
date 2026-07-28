@@ -20,7 +20,8 @@ public class InteractiveMenu {
     private final PingResultFormatter pingFormatter = new PingResultFormatter();
     private final TcpCheckService tcpService = new TcpCheckService();
     private final TcpCheckResultFormatter tcpFormatter = new TcpCheckResultFormatter();
-    private final AgwApiService agwApiService = new AgwApiService();
+    private final HttpDebugConfig httpDebugConfig = new HttpDebugConfig();
+    private final AgwApiService agwApiService = new AgwApiService(httpDebugConfig, outWithFallback());
     private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
     private final EndpointCheckService endpointCheckService = new EndpointCheckService();
     private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
@@ -44,6 +45,10 @@ public class InteractiveMenu {
         } catch (SQLException e) {
             this.out.println("Warnung: Datenbank konnte nicht initialisiert werden: " + e.getMessage());
         }
+    }
+
+    private PrintStream outWithFallback() {
+        return out != null ? out : System.out;
     }
 
     private String ts() {
@@ -107,16 +112,15 @@ public class InteractiveMenu {
         int totalServers = selected.stream().mapToInt(g -> g.getServers().size()).sum();
 
         while (true) {
-            // Ermittle Umgebungsname für den DB-leer-Hinweis
             String envName = selected.size() == 1 ? selected.get(0).getName() : "alle";
             String dbHint = "";
             if (!cacheConfig.isUseDbForApis()) {
-                // Prüfe ob DB bereits Daten für diese Umgebung hat
                 boolean hasData = false;
                 try {
                     hasData = selected.size() == 1
                             && !apiDatabase.loadApis(selected.get(0).getName()).isEmpty();
-                } catch (SQLException ignored) {}
+                } catch (SQLException ignored) {
+                }
                 if (!hasData) {
                     dbHint = "  ⚠ noch keine Daten für " + envName;
                 }
@@ -133,6 +137,8 @@ public class InteractiveMenu {
             out.println("  ─────────────────────────────────────");
             out.println("  [c]  Cache umschalten  →  würde wechseln zu: "
                     + cacheConfig.labelAfterToggle() + dbHint);
+            out.println("  [d]  HTTP-Debug: " + httpDebugConfig.label()
+                    + "  →  würde wechseln zu: " + httpDebugConfig.labelAfterToggle());
             out.println("  [b]  Zurück");
             out.println("  [q]  Beenden");
             out.print("Auswahl: ");
@@ -147,6 +153,10 @@ public class InteractiveMenu {
             }
             if ("c".equalsIgnoreCase(input)) {
                 cacheConfig.toggleAll();
+                continue;
+            }
+            if ("d".equalsIgnoreCase(input)) {
+                httpDebugConfig.toggle();
                 continue;
             }
             if ("1".equals(input)) {
@@ -167,12 +177,9 @@ public class InteractiveMenu {
             if ("4".equals(input)) {
                 ServerConfig server = selectServer(selected);
                 if (server != null) {
-                    ApiSelection sel = selectApis(server, envName);
-                    if (sel != null) {
-                        runEndpointList(server, sel, envName);
-                    }
+                    runEndpointListLoop(server, envName);
                 }
-                return;
+                continue;
             }
             if ("5".equals(input)) {
                 ServerConfig server = selectServer(selected);
@@ -184,7 +191,7 @@ public class InteractiveMenu {
                 }
                 return;
             }
-            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [5], [c], [b] oder [q] eingeben.");
+            out.println("Ungültige Eingabe. Bitte [1], [2], [3], [4], [5], [c], [d], [b] oder [q] eingeben.");
         }
     }
 
@@ -210,11 +217,6 @@ public class InteractiveMenu {
         out.println(tcpFormatter.format(results));
     }
 
-    /**
-     * Bei genau einem Server in der Auswahl wird dieser direkt zurückgegeben.
-     * Bei mehreren Servern wird ein Auswahlmenü angezeigt.
-     * Gibt null zurück wenn der Nutzer abbricht.
-     */
     private ServerConfig selectServer(List<ServerGroup> selected) {
         List<ServerConfig> all = new ArrayList<>();
         for (ServerGroup g : selected) {
@@ -244,25 +246,20 @@ public class InteractiveMenu {
         }
     }
 
-    /**
-     * Zeigt die API-Liste (inkl. Routing-Endpoint-Name) und lässt den Nutzer eine oder alle auswählen.
-     * Gibt eine Liste mit einer API (Einzelwahl), die volle Liste ([a]) oder
-     * null bei Abbruch zurück.
-     */
-    /** Ergebnis der API-Auswahl: gewählte APIs. */
     private static final class ApiSelection {
         final List<ApiInfo> apis;
+        final boolean showListAgain;
 
         ApiSelection(List<ApiInfo> apis) {
+            this(apis, false);
+        }
+
+        ApiSelection(List<ApiInfo> apis, boolean showListAgain) {
             this.apis = apis;
+            this.showListAgain = showListAgain;
         }
     }
 
-    /**
-     * Schritt 1: Lädt API-Liste + native Endpoints (einmalig), zeigt Liste mit
-     * Routing-Endpoint-Label an, lässt den Nutzer eine oder alle auswählen.
-     * Gibt null zurück bei Abbruch.
-     */
     private ApiSelection selectApis(ServerConfig server, String environment) {
         out.println();
         String[] hint = new String[1];
@@ -280,31 +277,77 @@ public class InteractiveMenu {
             out.println("Keine APIs gefunden.");
             return null;
         }
+        return selectApisFromLoadedList(server, apis, true, false);
+    }
 
+    private ApiSelection selectApisFromLoadedList(ServerConfig server, List<ApiInfo> apis,
+                                                  boolean showList, boolean allowCompactPrompt) {
+        boolean printList = showList;
         while (true) {
             out.println();
-            out.println("API auswählen für " + server.getHost() + ":");
-            for (int i = 0; i < apis.size(); i++) {
-                ApiInfo a = apis.get(i);
-                out.printf("  [%d]  %-30s %-10s %s%n",
-                        i + 1, a.getName(), nullSafe(a.getVersion()), nullSafe(a.getType()));
+            if (printList || !allowCompactPrompt) {
+                out.println("API auswählen für " + server.getHost() + ":");
+                for (int i = 0; i < apis.size(); i++) {
+                    ApiInfo a = apis.get(i);
+                    out.printf("  [%d]  %-30s %-10s %s%n",
+                            i + 1, a.getName(), nullSafe(a.getVersion()), nullSafe(a.getType()));
+                }
+                out.println("  [a]  Alle APIs");
+                if (allowCompactPrompt) {
+                    out.println("  [l]  Liste erneut anzeigen");
+                }
+                out.println("  [b]  Zurück");
+                out.print("Auswahl: ");
+            } else {
+                out.print("Nächste Auswahl [1-" + apis.size() + ", a, l, b]: ");
             }
-            out.println("  [a]  Alle APIs");
-            out.println("  [b]  Zurück");
-            out.print("Auswahl: ");
 
             String input = scanner.nextLine().trim();
             if ("b".equalsIgnoreCase(input)) {
                 return null;
             }
+            if (allowCompactPrompt && "l".equalsIgnoreCase(input)) {
+                printList = true;
+                continue;
+            }
             if ("a".equalsIgnoreCase(input)) {
-                return new ApiSelection(apis);
+                return new ApiSelection(apis, false);
             }
             int idx = parseIndex(input);
             if (idx >= 1 && idx <= apis.size()) {
-                return new ApiSelection(List.of(apis.get(idx - 1)));
+                return new ApiSelection(List.of(apis.get(idx - 1)), false);
             }
             out.println("Ungültige Eingabe.");
+            printList = false;
+        }
+    }
+
+    private void runEndpointListLoop(ServerConfig server, String environment) {
+        out.println();
+        String[] hint = new String[1];
+        out.print("Lade API-Liste von " + server.getHost() + " ...");
+        List<ApiInfo> apis;
+        try {
+            apis = agwApiService.listApis(server, environment, apiDatabase, cacheConfig, hint);
+            out.println(" [" + hint[0] + "]");
+        } catch (IOException e) {
+            out.println();
+            out.println("Fehler beim Abrufen der APIs: " + e.getMessage());
+            return;
+        }
+        if (apis.isEmpty()) {
+            out.println("Keine APIs gefunden.");
+            return;
+        }
+
+        boolean showList = true;
+        while (true) {
+            ApiSelection sel = selectApisFromLoadedList(server, apis, showList, true);
+            if (sel == null) {
+                return;
+            }
+            runEndpointList(server, sel, environment);
+            showList = sel.showListAgain;
         }
     }
 
@@ -345,10 +388,6 @@ public class InteractiveMenu {
         }
     }
 
-    /**
-     * Schritt 2: Lädt native Endpoints für die gewählten APIs (1 Request pro API),
-     * führt den HTTP-Check durch und gibt das Ergebnis aus.
-     */
     private void runEndpointCheck(ServerConfig server, ApiSelection sel, String environment) {
         List<EndpointCheckResult> results = new ArrayList<>();
         for (ApiInfo api : sel.apis) {
@@ -385,7 +424,6 @@ public class InteractiveMenu {
                     results.add(r);
                 } catch (java.sql.SQLException e) {
                     out.println(ts() + "  Warnung: Check-Ergebnis konnte nicht gespeichert werden: " + e.getMessage());
-                    // Ergebnis trotzdem anzeigen (ohne DB-Speicherung)
                     EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
                     if (ep.isAlias()) {
                         r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
