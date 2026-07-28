@@ -20,6 +20,6 @@ servers.kdbx
 .DS_Store
 **/.DS_Store
 servers.kdbx.bak
-app/report_all_environments_20260727_193039.csv
 reports/*
 agwcontrol.db
+app/report*.csv
