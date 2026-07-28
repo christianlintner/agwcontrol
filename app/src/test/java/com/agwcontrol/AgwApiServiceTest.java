@@ -209,6 +209,74 @@ class AgwApiServiceTest {
     }
 
     // ---------------------------------------------------------------
+    // parseAllAliases + resolveAlias (In-memory Cache)
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseAllAliasesBuildsMap() {
+        // Zwei Endpoint-Aliases in einer Alias-Listen-Antwort
+        String json =
+                "{\"id\":\"1\",\"name\":\"AliasA\",\"endPointURI\":\"https://backend-a:8080\",\"type\":\"endpoint\"}" +
+                "{\"id\":\"2\",\"name\":\"AliasB\",\"endPointURI\":\"https://backend-b:9090\",\"type\":\"endpoint\"}";
+        java.util.Map<String, String> map = service.parseAllAliases(json);
+        assertEquals(2, map.size());
+        assertEquals("https://backend-a:8080", map.get("AliasA"));
+        assertEquals("https://backend-b:9090", map.get("AliasB"));
+    }
+
+    @Test
+    void parseAllAliasesSkipsNonEndpointAliases() {
+        // Eintrag ohne endPointURI darf nicht in der Map landen
+        String json =
+                "{\"id\":\"1\",\"name\":\"SimpleAlias\",\"type\":\"simple\"}" +
+                "{\"id\":\"2\",\"name\":\"EndpointAlias\",\"endPointURI\":\"https://real-backend:8080\",\"type\":\"endpoint\"}";
+        java.util.Map<String, String> map = service.parseAllAliases(json);
+        assertEquals(1, map.size());
+        assertEquals("https://real-backend:8080", map.get("EndpointAlias"));
+        assertNull(map.get("SimpleAlias"));
+    }
+
+    @Test
+    void resolveAliasUsesCacheOnSecondCall() throws Exception {
+        // int[]-Zähler: von der anonymen Klasse aus schreibbar, von außen lesbar
+        int[] loadCount = {0};
+
+        // Subklasse, die loadAllAliases zählt und echten HTTP-Aufruf vermeidet
+        AgwApiService spy = new AgwApiService() {
+            @Override
+            void loadAllAliases(ServerConfig server, String baseUrl) {
+                loadCount[0]++;
+                // aliasCache per Reflection befüllen
+                try {
+                    java.lang.reflect.Field f =
+                            AgwApiService.class.getDeclaredField("aliasCache");
+                    f.setAccessible(true);
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, java.util.Map<String, String>> cache =
+                            (java.util.Map<String, java.util.Map<String, String>>) f.get(this);
+                    java.util.Map<String, String> entries = new java.util.HashMap<>();
+                    entries.put("MyAlias", "https://cached-backend:8080");
+                    cache.put(baseUrl, entries);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+
+        ServerConfig server = new ServerConfig("testhost", 5555, "user", "pass");
+
+        // Erster Aufruf: loadAllAliases muss aufgerufen werden
+        String result1 = spy.resolveAlias(server, "MyAlias");
+        assertEquals("https://cached-backend:8080", result1);
+        assertEquals(1, loadCount[0]);
+
+        // Zweiter Aufruf: Cache-Hit – loadAllAliases darf NICHT erneut aufgerufen werden
+        String result2 = spy.resolveAlias(server, "MyAlias");
+        assertEquals("https://cached-backend:8080", result2);
+        assertEquals(1, loadCount[0]);
+    }
+
+    // ---------------------------------------------------------------
     // listApis mit DB-Cache
     // ---------------------------------------------------------------
 

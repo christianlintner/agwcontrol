@@ -2,7 +2,7 @@
 
 Branch: `feature/issue-15-resolve-endpoint-routing-policy`
 
-## Status: ✅ Implementiert
+## Status: ✅ Implementiert + ✅ Alias-Cache optimiert
 
 ---
 
@@ -142,15 +142,47 @@ resolvedUrl = resolveAlias(server, aliasName)              // GET /alias → fil
 return [RoutingEndpoint.alias(aliasName, resolvedUrl)]
 ```
 
-### HTTP-Calls pro API: 3 + N (N = Anzahl Policies, typisch 1)
+### HTTP-Calls pro API
+
+#### Vor Alias-Cache-Optimierung
 - `GET /apis/{apiId}` — 1×
 - `GET /policies/{policyId}` — 1× pro Policy-ID
 - `GET /policyActions?policyActionIds=...` — 1× (Bulk)
-- `GET /alias` — 1×
+- `GET /alias` — **1× pro API** ← ineffizient bei N APIs
+
+Bei 200 APIs: **800 HTTP-Calls**, davon 200× dieselbe vollständige Alias-Liste
+
+#### Nach Alias-Cache-Optimierung
+- `GET /apis/{apiId}` — 1×
+- `GET /policies/{policyId}` — 1× pro Policy-ID
+- `GET /policyActions?policyActionIds=...` — 1× (Bulk)
+- `GET /alias` — **1× pro Server pro Session** (In-memory Cache)
+
+Bei 200 APIs: **603 HTTP-Calls** — 199 `GET /alias`-Calls gespart
+
+### Alias-Cache (In-memory, pro Server)
+
+`AgwApiService` hält einen `Map<String, Map<String, String>> aliasCache`:
+- Outer key: `baseUrl` des Servers (z. B. `https://vm40757:5559`)
+- Inner map: `aliasName → endPointURI`
+
+Beim ersten `resolveAlias()`-Aufruf pro Server wird `GET /alias` einmalig aufgerufen,
+der komplette Response per `parseAllAliases()` in die Inner Map geparst und gecacht.
+Alle weiteren Aufrufe lesen direkt aus dem Cache — kein HTTP-Call.
+
+**Lebensdauer:** Session (bis Programmende). Passt zu bestehender `AgwApiService`-Instanz
+in `InteractiveMenu`. Keine DB-Änderung, kein neues Config-Flag.
+
+#### Neue Methoden
+
+| Methode | Aufgabe |
+|---|---|
+| `loadAllAliases(ServerConfig)` | `GET /alias` → befüllt `aliasCache` für diesen Server |
+| `parseAllAliases(String)` | Parst alle `{name, endPointURI}`-Blöcke aus dem Alias-Listen-Body in eine Map |
 
 ---
 
-## Tests in `AgwApiServiceTest.java` (alle grün)
+## Tests in `AgwApiServiceTest.java` (alle grün, erweitert)
 
 | Test | Prüft |
 |---|---|
@@ -167,6 +199,9 @@ return [RoutingEndpoint.alias(aliasName, resolvedUrl)]
 | `parseEndPointURIByNameFound()` | Alias per Name aus Alias-Liste gefunden |
 | `parseEndPointURIByNameNotFound()` | Alias nicht in Liste → `null` |
 | `parseEndPointURIByNameNullInput()` | `null`-Input → `null` |
+| `parseAllAliasesBuildsMap()` | Alias-Listen-Body → vollständige Name→URL Map |
+| `parseAllAliasesSkipsNonEndpointAliases()` | Aliases ohne `endPointURI` landen nicht in der Map |
+| `resolveAliasUsesCacheOnSecondCall()` | `GET /alias` wird nur 1× aufgerufen, zweiter Call kommt aus Cache |
 | `getNativeEndpointsAlwaysUsesRoutingPolicy()` | Integration: dummy.dummy in nativeEndpoint irrelevant, Routing Policy liefert richtigen Endpoint |
 | `getNativeEndpointsReturnsEmptyWhenNoPolicies()` | API ohne `policies`-Feld → leere Liste |
 | `parseNativeEndpointsNoDummyDummyFallback()` | Regressionstest: `dummy.dummy` wird nicht mehr auf `aliasName` umgeschrieben |
@@ -177,8 +212,8 @@ return [RoutingEndpoint.alias(aliasName, resolvedUrl)]
 
 | Datei | Änderungsart |
 |---|---|
-| `AgwApiService.java` | `getNativeEndpoints()` neu; `resolveAlias()` auf `/alias`-Liste umgestellt; 6 neue Parsing/Fetch-Methoden; `dummy.dummy`-Logik entfernt |
-| `AgwApiServiceTest.java` | 16 neue/angepasste Tests; 2 alte `dummy.dummy`-Tests ersetzt |
+| `AgwApiService.java` | `getNativeEndpoints()` neu; `resolveAlias()` mit In-memory Cache; `loadAllAliases()` + `parseAllAliases()` neu; 6 weitere neue Methoden; `dummy.dummy`-Logik entfernt |
+| `AgwApiServiceTest.java` | 19 neue/angepasste Tests; 2 alte `dummy.dummy`-Tests ersetzt |
 | `InteractiveMenu.java` | **keine Änderung** |
 | `RoutingEndpoint.java` | **keine Änderung** |
 | `ApiDatabase.java` | **keine Änderung** |

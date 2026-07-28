@@ -29,6 +29,15 @@ public class AgwApiService {
     private final HttpDebugConfig httpDebugConfig;
     private final PrintStream debugOut;
 
+    /**
+     * In-memory Cache für Endpoint-Aliases pro Server.
+     * Key: baseUrl (z. B. "https://vm40757:5559")
+     * Value: Map von aliasName → endPointURI
+     * Wird beim ersten resolveAlias()-Aufruf pro Server befüllt.
+     */
+    private final java.util.Map<String, java.util.Map<String, String>> aliasCache =
+            new java.util.HashMap<>();
+
     public AgwApiService() {
         this(new HttpDebugConfig(), System.out);
     }
@@ -143,30 +152,63 @@ public class AgwApiService {
     }
 
     /**
-     * Löst einen Endpoint-Alias via GET /rest/apigateway/alias auf.
-     * Sucht in der Liste aller Aliases nach dem Eintrag mit "name" == aliasName
-     * und gibt dessen endPointURI zurück.
-     * Gibt null zurück wenn kein passender Alias gefunden wird.
+     * Löst einen Endpoint-Alias auf.
+     * Beim ersten Aufruf pro Server wird GET /rest/apigateway/alias einmalig aufgerufen
+     * und alle Aliases in den In-memory Cache geladen.
+     * Folgeaufrufe lesen direkt aus dem Cache — kein weiterer HTTP-Call.
      */
     String resolveAlias(ServerConfig server, String aliasName) throws IOException {
         String baseUrl = resolveBaseUrl(server);
-        URL url = new URL(baseUrl + "/rest/apigateway/alias");
+        if (!aliasCache.containsKey(baseUrl)) {
+            loadAllAliases(server, baseUrl);
+        }
+        java.util.Map<String, String> cache = aliasCache.get(baseUrl);
+        return cache != null ? cache.get(aliasName) : null;
+    }
 
+    /**
+     * Lädt alle Endpoint-Aliases vom Server und befüllt den aliasCache.
+     * Ruft GET /rest/apigateway/alias auf.
+     */
+    void loadAllAliases(ServerConfig server, String baseUrl) throws IOException {
+        URL url = new URL(baseUrl + "/rest/apigateway/alias");
         HttpURLConnection conn = openConnection(url, server);
         String body;
         try {
             int status = conn.getResponseCode();
-            if (status == 404) {
-                return null;
-            }
             if (status < 200 || status >= 300) {
-                return null;
+                // Bei Fehler leere Map cachen damit kein erneuter Aufruf stattfindet
+                aliasCache.put(baseUrl, new java.util.HashMap<>());
+                return;
             }
             body = readBody(conn);
         } finally {
             conn.disconnect();
         }
-        return parseEndPointURIByName(body, aliasName);
+        aliasCache.put(baseUrl, parseAllAliases(body));
+    }
+
+    /**
+     * Parst alle Alias-Einträge mit endPointURI aus dem Alias-Listen-Body.
+     * Gibt eine Map von aliasName → endPointURI zurück.
+     */
+    java.util.Map<String, String> parseAllAliases(String json) {
+        java.util.Map<String, String> result = new java.util.HashMap<>();
+        if (json == null) {
+            return result;
+        }
+        Pattern blockPattern = Pattern.compile("\\{([^{}]*)\\}", Pattern.DOTALL);
+        Matcher blockMatcher = blockPattern.matcher(json);
+        while (blockMatcher.find()) {
+            String block = blockMatcher.group(1);
+            Matcher nameMatcher = Pattern.compile(
+                    "\"name\"\\s*:\\s*\"([^\"]+)\"").matcher(block);
+            Matcher uriMatcher = ENDPOINT_URI_PATTERN.matcher(block);
+            if (nameMatcher.find() && uriMatcher.find()) {
+                result.put(nameMatcher.group(1), uriMatcher.group(1));
+            }
+        }
+        return result;
     }
 
     /**
