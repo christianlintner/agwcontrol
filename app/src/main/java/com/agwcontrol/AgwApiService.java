@@ -47,16 +47,11 @@ public class AgwApiService {
         this.debugOut = debugOut;
     }
 
-    /**
-     * Ruft GET /rest/apigateway/apis/{apiId} auf, ermittelt den Endpoint
-     * über die straightThroughRouting-Policy und löst den Alias auf.
-     */
-    public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId) throws IOException {
+    /** Ruft GET /rest/apigateway/apis/{apiId} auf und gibt den Body zurück. */
+    String fetchApiBody(ServerConfig server, String apiId) throws IOException {
         String baseUrl = resolveBaseUrl(server);
         URL url = new URL(baseUrl + "/rest/apigateway/apis/" + apiId);
-
         HttpURLConnection conn = openConnection(url, server);
-        String body;
         try {
             int status = conn.getResponseCode();
             if (status == 401) {
@@ -65,10 +60,18 @@ public class AgwApiService {
             if (status < 200 || status >= 300) {
                 throw new IOException("HTTP " + status + " von " + baseUrl);
             }
-            body = readBody(conn);
+            return readBody(conn);
         } finally {
             conn.disconnect();
         }
+    }
+
+    /**
+     * Ruft GET /rest/apigateway/apis/{apiId} auf, ermittelt den Endpoint
+     * über die straightThroughRouting-Policy und löst den Alias auf.
+     */
+    public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId) throws IOException {
+        String body = fetchApiBody(server, apiId);
 
         // Stufe 1: Policy-IDs aus dem API-Body lesen
         List<String> policyIds = parsePolicies(body);
@@ -86,18 +89,28 @@ public class AgwApiService {
         if (actionIds.isEmpty()) {
             return new ArrayList<>();
         }
-        // Stufe 3: Policy Actions per Bulk-Call abrufen und Routing-Alias extrahieren
+        // Stufe 3: Policy Actions per Bulk-Call abrufen und endpointUri extrahieren
         String policyActionsJson = fetchPolicyActions(server, actionIds);
         if (policyActionsJson == null) {
             return new ArrayList<>();
         }
-        String aliasName = parseRoutingAliasName(policyActionsJson);
-        if (aliasName == null) {
+        String endpointUri = parseRoutingEndpointUri(policyActionsJson);
+        if (endpointUri == null) {
             return new ArrayList<>();
         }
-        String resolvedUrl = resolveAlias(server, aliasName);
         List<RoutingEndpoint> result = new ArrayList<>();
-        result.add(RoutingEndpoint.alias(aliasName, resolvedUrl));
+        // Wenn der Ausdruck mit ${AliasName} beginnt → Alias auflösen
+        // Sonst → direkte URL (Basis-Teil vor erstem ${ oder dem ganzen Wert)
+        String aliasName = parseRoutingAliasName(policyActionsJson);
+        if (aliasName != null) {
+            String resolvedUrl = resolveAlias(server, aliasName);
+            result.add(RoutingEndpoint.alias(aliasName, resolvedUrl));
+        } else {
+            // Direkte URL: alles vor dem ersten "${" abschneiden (falls vorhanden)
+            int dollarIdx = endpointUri.indexOf("${");
+            String directUrl = dollarIdx >= 0 ? endpointUri.substring(0, dollarIdx) : endpointUri;
+            result.add(RoutingEndpoint.direct(directUrl));
+        }
         return result;
     }
 
@@ -458,15 +471,13 @@ public class AgwApiService {
 
     /**
      * Sucht im policyActions-Response-Body nach der Action mit
-     * templateKey=="straightThroughRouting" und extrahiert daraus den Alias-Namen
-     * aus dem endpointUri-Parameter (z. B. "${AKOS_API_EndpointAlias}/...").
+     * templateKey=="straightThroughRouting" und gibt den rohen endpointUri-Wert zurück.
      * Gibt null zurück wenn keine solche Action gefunden wird.
      */
-    String parseRoutingAliasName(String json) {
+    String parseRoutingEndpointUri(String json) {
         if (json == null) {
             return null;
         }
-        // Suche den Bereich ab "straightThroughRouting" bis zum nächsten endpointUri-Wert
         Pattern straightThroughPattern = Pattern.compile(
                 "\"templateKey\"\\s*:\\s*\"straightThroughRouting\"" +
                 ".*?" +
@@ -475,12 +486,27 @@ public class AgwApiService {
                 "\"values\"\\s*:\\s*\\[\\s*\"([^\"]+)\"",
                 Pattern.DOTALL);
         Matcher m = straightThroughPattern.matcher(json);
-        if (!m.find()) {
+        return m.find() ? m.group(1) : null;
+    }
+
+    /**
+     * Sucht im policyActions-Response-Body nach der Action mit
+     * templateKey=="straightThroughRouting" und extrahiert daraus den Alias-Namen
+     * aus dem endpointUri-Parameter (z. B. "${AKOS_API_EndpointAlias}/...").
+     * Gibt null zurück wenn keine solche Action gefunden wird oder die URL direkt ist.
+     */
+    String parseRoutingAliasName(String json) {
+        String endpointUri = parseRoutingEndpointUri(json);
+        if (endpointUri == null) {
             return null;
         }
-        String endpointUri = m.group(1);
         Matcher aliasMatcher = ALIAS_EXPRESSION_PATTERN.matcher(endpointUri);
-        return aliasMatcher.find() ? aliasMatcher.group(1) : null;
+        if (!aliasMatcher.find()) {
+            return null;
+        }
+        // Nur ein Alias wenn der gesamte Ausdruck mit ${...} beginnt
+        int matchStart = aliasMatcher.start();
+        return matchStart == 0 ? aliasMatcher.group(1) : null;
     }
 
     String parseEndPointURI(String json) {

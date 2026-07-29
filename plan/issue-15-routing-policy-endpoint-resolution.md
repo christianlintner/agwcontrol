@@ -2,7 +2,7 @@
 
 Branch: `feature/issue-15-resolve-endpoint-routing-policy`
 
-## Status: ✅ Implementiert + ✅ Alias-Cache optimiert
+## Status: ✅ Implementiert + ✅ Alias-Cache optimiert + ✅ Direkte URL-Unterstützung
 
 ---
 
@@ -22,10 +22,12 @@ GET /apis/{apiId}
        └─ GET /policies/{policyId}               →  policy.policyEnforcements[].enforcements[].enforcementObjectId
             └─ GET /policyActions?policyActionIds=act-1,act-2,...
                  └─ policyAction[templateKey=="straightThroughRouting"]
-                      └─ parameters[templateKey=="endpointUri"].values[0]
-                           └─ "${AliasName}/..."  →  Regex \$\{([^}]+)\}  →  AliasName
-                                └─ GET /alias    →  Alias-Liste
-                                     └─ Eintrag mit "name"=="AliasName"  →  endPointURI
+                      └─ parameters[templateKey=="endpointUri"].values[0]  →  endpointUri (roh)
+                           ├─ Fall A: "${AliasName}/..."  →  Regex \$\{([^}]+)\}  →  AliasName
+                           │         └─ GET /alias  →  Alias-Liste
+                           │              └─ Eintrag mit "name"=="AliasName"  →  endPointURI
+                           └─ Fall B: "https://host/path/${sys:resource_path}"  →  direkte URL
+                                     └─ Substring vor erstem "${" → "https://host/path/"
 ```
 
 > **Wichtig:** `api.policies[]` enthält **Policy-IDs**, nicht Policy Action IDs.
@@ -77,7 +79,9 @@ GET /apis/{apiId}
       "parameters": [
         {
           "templateKey": "endpointUri",
-          "values": [ "${AKOS_API_EndpointAlias}/${sys:resource_path}" ]
+          "values": [ "${AKOS_API_EndpointAlias}/${sys:resource_path}" ]   // Fall A: Alias
+          // oder:
+          "values": [ "https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}" ]  // Fall B: direkte URL
         }
       ]
     }
@@ -110,11 +114,12 @@ der Code filtert auf `straightThroughRouting`.
 
 | Methode | Art | Beschreibung |
 |---|---|---|
-| `getNativeEndpoints(ServerConfig, String)` | geändert | Komplett neu — liest Policies → Action IDs → Alias-Name → aufgelöste URL |
+| `getNativeEndpoints(ServerConfig, String)` | geändert | Liest Policies → Action IDs → endpointUri → Alias **oder** direkte URL |
 | `fetchPolicy(ServerConfig, String)` | neu | `GET /policies/{policyId}` |
 | `parseEnforcementObjectIds(String)` | neu | Extrahiert `enforcementObjectId`-Werte aus Policy-Body |
 | `fetchPolicyActions(ServerConfig, List<String>)` | neu | `GET /policyActions?policyActionIds=...` (Bulk) |
-| `parseRoutingAliasName(String)` | neu | Findet `straightThroughRouting`-Block → Alias-Name per Regex |
+| `parseRoutingEndpointUri(String)` | neu | Findet `straightThroughRouting`-Block → gibt den rohen `endpointUri`-Wert zurück |
+| `parseRoutingAliasName(String)` | geändert | Delegiert an `parseRoutingEndpointUri`, gibt Alias-Name nur zurück wenn Ausdruck mit `${` beginnt |
 | `parsePolicies(String)` | neu | Liest `api.policies[]` aus API-Detail-Body |
 | `resolveAlias(ServerConfig, String)` | geändert | Ruft `GET /alias` auf, filtert per Name statt per ID-Pfad |
 | `parseEndPointURIByName(String, String)` | neu | Sucht Alias-Eintrag per `"name"` in der Alias-Listen-Antwort |
@@ -135,12 +140,25 @@ for policyId in policyIds:
 if actionIds leer: return []
 
 policyActionsJson = fetchPolicyActions(server, actionIds)  // GET /policyActions?...
-aliasName = parseRoutingAliasName(policyActionsJson)       // templateKey=="straightThroughRouting"
-if aliasName == null: return []
+endpointUri = parseRoutingEndpointUri(policyActionsJson)   // templateKey=="straightThroughRouting"
+if endpointUri == null: return []
 
-resolvedUrl = resolveAlias(server, aliasName)              // GET /alias → filter by name
-return [RoutingEndpoint.alias(aliasName, resolvedUrl)]
+aliasName = parseRoutingAliasName(policyActionsJson)       // null wenn endpointUri nicht mit ${ beginnt
+if aliasName != null:
+    resolvedUrl = resolveAlias(server, aliasName)          // GET /alias → filter by name
+    return [RoutingEndpoint.alias(aliasName, resolvedUrl)]
+else:
+    directUrl = endpointUri vor erstem "${" (oder ganzer Wert)
+    return [RoutingEndpoint.direct(directUrl)]
 ```
+
+### Unterscheidung Alias vs. direkte URL
+
+| `endpointUri`-Wert | Ergebnis |
+|---|---|
+| `${AKOS_API_EndpointAlias}/${sys:resource_path}` | Alias → `resolveAlias()` → `RoutingEndpoint.alias(...)` |
+| `https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}` | direkte URL → Substring vor `${` → `RoutingEndpoint.direct("https://akos.oebb.at/pakos/smp/apt/")` |
+| `https://backend.example.com/api/v1` | direkte URL (kein `${`) → ganzer Wert → `RoutingEndpoint.direct(...)` |
 
 ### HTTP-Calls pro API
 
@@ -191,11 +209,16 @@ in `InteractiveMenu`. Keine DB-Änderung, kein neues Config-Flag.
 | `parseEnforcementObjectIdsNullInput()` | `null`-Input → leere Liste |
 | `parsePoliciesExtractsPolicyIds()` | `api.policies[]` → ID-Liste |
 | `parsePoliciesEmptyWhenAbsent()` | Kein `policies`-Feld → leere Liste |
+| `parseRoutingEndpointUriExtractsAliasExpression()` | `${AKOS_API_EndpointAlias}/...` → roher URI-String zurückgegeben |
+| `parseRoutingEndpointUriExtractsDirectUrl()` | `https://host/path/${...}` → roher URI-String zurückgegeben |
+| `parseRoutingEndpointUriReturnsNullWhenAbsent()` | Kein `straightThroughRouting` → `null` |
+| `parseRoutingEndpointUriNullInput()` | `null`-Input → `null` |
 | `parseRoutingAliasNameExtractsFromExpression()` | `${AKOS_API_EndpointAlias}/...` → `"AKOS_API_EndpointAlias"` |
 | `parseRoutingAliasNameSimpleExpression()` | `${MyAlias}` → `"MyAlias"` |
 | `parseRoutingAliasNameAbsent()` | Kein `straightThroughRouting`-Block → `null` |
 | `parseRoutingAliasNameIgnoresNonRoutingActions()` | Mehrere Actions → nur `straightThroughRouting` ausgewertet |
 | `parseRoutingAliasNameNullInput()` | `null`-Input → `null` |
+| `parseRoutingAliasNameReturnsNullForDirectUrl()` | Direkte URL beginnt nicht mit `${` → `null` |
 | `parseEndPointURIByNameFound()` | Alias per Name aus Alias-Liste gefunden |
 | `parseEndPointURIByNameNotFound()` | Alias nicht in Liste → `null` |
 | `parseEndPointURIByNameNullInput()` | `null`-Input → `null` |
@@ -203,6 +226,7 @@ in `InteractiveMenu`. Keine DB-Änderung, kein neues Config-Flag.
 | `parseAllAliasesSkipsNonEndpointAliases()` | Aliases ohne `endPointURI` landen nicht in der Map |
 | `resolveAliasUsesCacheOnSecondCall()` | `GET /alias` wird nur 1× aufgerufen, zweiter Call kommt aus Cache |
 | `getNativeEndpointsAlwaysUsesRoutingPolicy()` | Integration: dummy.dummy in nativeEndpoint irrelevant, Routing Policy liefert richtigen Endpoint |
+| `getNativeEndpointsDirectUrlFromRoutingPolicy()` | Integration: direkte URL in endpointUri → `RoutingEndpoint.direct("https://akos.oebb.at/pakos/smp/apt/")` |
 | `getNativeEndpointsReturnsEmptyWhenNoPolicies()` | API ohne `policies`-Feld → leere Liste |
 | `parseNativeEndpointsNoDummyDummyFallback()` | Regressionstest: `dummy.dummy` wird nicht mehr auf `aliasName` umgeschrieben |
 
@@ -212,8 +236,8 @@ in `InteractiveMenu`. Keine DB-Änderung, kein neues Config-Flag.
 
 | Datei | Änderungsart |
 |---|---|
-| `AgwApiService.java` | `getNativeEndpoints()` neu; `resolveAlias()` mit In-memory Cache; `loadAllAliases()` + `parseAllAliases()` neu; 6 weitere neue Methoden; `dummy.dummy`-Logik entfernt |
-| `AgwApiServiceTest.java` | 19 neue/angepasste Tests; 2 alte `dummy.dummy`-Tests ersetzt |
+| `AgwApiService.java` | `getNativeEndpoints()` unterstützt jetzt Alias + direkte URL; `parseRoutingEndpointUri()` neu; `parseRoutingAliasName()` delegiert an `parseRoutingEndpointUri`, prüft ob `${` am Anfang; `resolveAlias()` mit In-memory Cache; 8 weitere Methoden |
+| `AgwApiServiceTest.java` | 5 neue Tests für `parseRoutingEndpointUri`, `parseRoutingAliasName` (direkter URL-Fall) und Integration |
 | `InteractiveMenu.java` | **keine Änderung** |
 | `RoutingEndpoint.java` | **keine Änderung** |
 | `ApiDatabase.java` | **keine Änderung** |
@@ -226,6 +250,8 @@ in `InteractiveMenu`. Keine DB-Änderung, kein neues Config-Flag.
 - [x] Die Routing Policy wird über die referenzierten Policy-IDs ermittelt
 - [x] Der Endpoint Alias wird aus der Routing Policy gelesen
 - [x] Der tatsächliche Endpoint wird über den Alias aufgelöst
+- [x] Direkte URL in `endpointUri` (kein `${Alias}` am Anfang) wird als `RoutingEndpoint.direct` zurückgegeben
+- [x] Basis-URL wird korrekt aus `https://host/path/${sys:resource_path}` extrahiert
 - [x] Endpoint-Listing verwendet den aufgelösten Endpoint
 - [x] Endpoint-Check verwendet denselben aufgelösten Endpoint
 - [x] Tests für den Fall `nativeEndpoint = dummy.dummy` + gültige Routing Policy

@@ -418,6 +418,34 @@ class AgwApiServiceTest {
     }
 
     // ---------------------------------------------------------------
+    // parseRoutingEndpointUri
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseRoutingEndpointUriExtractsAliasExpression() {
+        String json = policyActionsJson("${AKOS_API_EndpointAlias}/${sys:resource_path}");
+        assertEquals("${AKOS_API_EndpointAlias}/${sys:resource_path}",
+                service.parseRoutingEndpointUri(json));
+    }
+
+    @Test
+    void parseRoutingEndpointUriExtractsDirectUrl() {
+        String json = policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+        assertEquals("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}",
+                service.parseRoutingEndpointUri(json));
+    }
+
+    @Test
+    void parseRoutingEndpointUriReturnsNullWhenAbsent() {
+        assertNull(service.parseRoutingEndpointUri("{\"policyAction\":[]}"));
+    }
+
+    @Test
+    void parseRoutingEndpointUriNullInput() {
+        assertNull(service.parseRoutingEndpointUri(null));
+    }
+
+    // ---------------------------------------------------------------
     // parseRoutingAliasName
     // ---------------------------------------------------------------
 
@@ -468,41 +496,30 @@ class AgwApiServiceTest {
         assertNull(service.parseRoutingAliasName(null));
     }
 
+    @Test
+    void parseRoutingAliasNameReturnsNullForDirectUrl() {
+        // Direkte URL beginnt nicht mit ${...} → kein Alias
+        String json = policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+        assertNull(service.parseRoutingAliasName(json));
+    }
+
     // ---------------------------------------------------------------
     // getNativeEndpoints – Integration (Subklasse überschreibt HTTP-Calls)
     // ---------------------------------------------------------------
 
     @Test
     void getNativeEndpointsAlwaysUsesRoutingPolicy() throws Exception {
-        // Alle HTTP-Calls werden durch Überschreiben der jeweiligen fetch*-Methoden simuliert.
-        // api.policies[] → fetchPolicy() → parseEnforcementObjectIds() → fetchPolicyActions() → parseRoutingAliasName()
-        AgwApiService svc2 = new AgwApiService() {
+        // Nur die HTTP-Calls werden gemockt – getNativeEndpoints läuft echt durch.
+        AgwApiService svc = new AgwApiService() {
             @Override
-            public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId)
-                    throws java.io.IOException {
-                // Simulierter API-Body: policies vorhanden, nativeEndpoint ist irrelevant
-                String fakeApiBody = "{\"apiResponse\":{\"api\":{" +
+            String fetchApiBody(ServerConfig server, String apiId) {
+                return "{\"apiResponse\":{\"api\":{" +
                         "\"nativeEndpoint\":[{\"uri\":\"dummy.dummy\",\"alias\":false}]," +
                         "\"policies\":[\"policy-1\"]" +
                         "}}}";
-                List<String> policyIds = parsePolicies(fakeApiBody);
-                List<String> actionIds = new java.util.ArrayList<>();
-                for (String pid : policyIds) {
-                    String pJson = fetchPolicy(server, pid);
-                    if (pJson != null) actionIds.addAll(parseEnforcementObjectIds(pJson));
-                }
-                if (actionIds.isEmpty()) return new java.util.ArrayList<>();
-                String policyActionsJson = fetchPolicyActions(server, actionIds);
-                String aliasName = parseRoutingAliasName(policyActionsJson);
-                if (aliasName == null) return new java.util.ArrayList<>();
-                String resolvedUrl = resolveAlias(server, aliasName);
-                java.util.List<RoutingEndpoint> result = new java.util.ArrayList<>();
-                result.add(RoutingEndpoint.alias(aliasName, resolvedUrl));
-                return result;
             }
             @Override
             String fetchPolicy(ServerConfig server, String policyId) {
-                // Simulierter Policy-Body mit einer enforcementObjectId
                 return "{\"policy\":{\"policyEnforcements\":[{\"enforcements\":[" +
                         "{\"enforcementObjectId\":\"action-1\"}],\"stageKey\":\"routing\"}]}}";
             }
@@ -517,11 +534,42 @@ class AgwApiServiceTest {
         };
 
         ServerConfig server = new ServerConfig("host", 443, "u", "p", null);
-        List<RoutingEndpoint> result = svc2.getNativeEndpoints(server, "api-1");
+        List<RoutingEndpoint> result = svc.getNativeEndpoints(server, "api-1");
         assertEquals(1, result.size());
         assertTrue(result.get(0).isAlias());
         assertEquals("AKOS_API_EndpointAlias", result.get(0).getAliasName());
         assertEquals("https://real-backend:8080", result.get(0).getResolvedUrl());
+    }
+
+    @Test
+    void getNativeEndpointsDirectUrlFromRoutingPolicy() throws Exception {
+        // endpointUri ist eine direkte URL (kein ${Alias} am Anfang) –
+        // getNativeEndpoints muss einen RoutingEndpoint.direct(...) zurückgeben.
+        AgwApiService svc = new AgwApiService() {
+            @Override
+            String fetchApiBody(ServerConfig server, String apiId) {
+                return "{\"apiResponse\":{\"api\":{" +
+                        "\"nativeEndpoint\":[{\"uri\":\"dummy.dummy\",\"alias\":false}]," +
+                        "\"policies\":[\"policy-1\"]" +
+                        "}}}";
+            }
+            @Override
+            String fetchPolicy(ServerConfig server, String policyId) {
+                return "{\"policy\":{\"policyEnforcements\":[{\"enforcements\":[" +
+                        "{\"enforcementObjectId\":\"action-1\"}],\"stageKey\":\"routing\"}]}}";
+            }
+            @Override
+            String fetchPolicyActions(ServerConfig server, List<String> ids) {
+                return policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+            }
+        };
+
+        ServerConfig server = new ServerConfig("host", 443, "u", "p", null);
+        List<RoutingEndpoint> result = svc.getNativeEndpoints(server, "api-1");
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).isAlias());
+        assertNull(result.get(0).getAliasName());
+        assertEquals("https://akos.oebb.at/pakos/smp/apt/", result.get(0).getResolvedUrl());
     }
 
     @Test
