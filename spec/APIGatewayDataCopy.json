@@ -1,0 +1,441 @@
+{
+  "swagger" : "2.0",
+  "info" : {
+    "description" : "Throughout the Lifecycle of the webMethods API Gateway version, periodic upgrades of Datastore and Dashboard are performed by using the Datacopy feature. To upgrade from one version of Elasticsearch to the next one, it is crucial to move the core and transactional data from the previous version to the target version.",
+    "version" : "10.15",
+    "title" : "API Gateway Data copy"
+  },
+  "host" : "localhost:5555",
+  "basePath" : "/rest/apigateway",
+  "schemes" : [ "http" ],
+  "consumes" : [ "application/json", "application/json" ],
+  "produces" : [ "application/json", "application/json" ],
+  "paths" : {
+    "/migrate/datacopy" : {
+      "post" : {
+        "description" : "Triggers a datacopy action to transfer the core and transactional data from the source datastore to the target datastore and also update the target dashboard configuration. Copying data to a single node is sufficient if the destination datastore is clustered.  While dashboard availability is not required, we must ensure that the source and target datastores are accessible. There is a rollback option available in case the upgrade fails or is unsuccessful. The client is redirected to the source Datastore, and the configuration update is undone. After that, we must clean up the target datastore and begin the data copy procedure over. By using a webhook, you can automate the status delivery process and receive timely status updates on the data copy process, For example, you can use Microsoft Teams to get the timely status of the data copy process whenever the webMethods API Gateway undergoes a change. ",
+        "operationId" : "datacopy",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/MigrateDatacopyRequest"
+          },
+          "x-examples" : {
+            "application/json" : "{\"targetCoreESEndpointConfig\":{\"endpoint\":\"http://ES-target-core:7200\",\"userName\":\"\",\"password\":\"\"},\"targetEventsAndLogsESEndpointConfig\":{\"endpoint\":\"http://ES-target-events:8200\",\"userName\":\"\",\"password\":\"\"},\"targetDashboardConfig\":{\"endpoint\":\"http://Kibana-target:5601\"},\"webhookConfig\":{\"endpoint\":\"https://IBM.webhook.office.com/webhookb2/389f20cc-7a1e-4748-a831-169b0f186370@d9662eb9-ad98-4e74-a8a2-04ed5d544db6/IncomingWebhook/d5224d8d40704d4398f41f11c9f81ea9/6853d033-7782-4044-9d13-1390c00393a6\",\"userName\":\"\",\"password\":\"\",\"template\":\"{\\\"@type\\\":\\\"MessageCard\\\",\\\"@context\\\":\\\"http://schema.org/extensions\\\",\\\"themeColor\\\":\\\"0076D7\\\",\\\"summary\\\":\\\"Datacopylog\\\",\\\"sections\\\":[{\\\"activityTitle\\\":\\\"Datacopystatus\\\",\\\"activitySubtitle\\\":\\\"APIGw\\\",\\\"activityImage\\\":\\\"https://teamsnodesample.azurewebsites.net/static/img/image5.png\\\",\\\"facts\\\":[{\\\"name\\\":\\\"Status\\\",\\\"value\\\":\\\"@@status@@\\\"},{\\\"name\\\":\\\"Workflow\\\",\\\"value\\\":\\\"@@workflow@@\\\"},{\\\"name\\\":\\\"Logs\\\",\\\"value\\\":\\\"@@log@@\\\"}],\\\"markdown\\\":true}]}\"}}"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "The status code indicates that the core data migration process has begun. The asynchronous datacopy process produces an empty success response after it has started. The timely state of the data copy process can be obtained by configuring a webhook or by retrieving the data copy process status using a REST API.",
+            "examples" : {
+              "application/json" : "{}"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/core" : {
+      "post" : {
+        "description" : "Triggers a datacopy action to transfer the core data from the source datastore to the target datastore. Copying data to a single node is sufficient if the destination datastore is clustered.  While dashboard availability is not required, we must ensure that the source and target datastores are accessible. There is a rollback option available in case the upgrade fails or is unsuccessful. The client is redirected to the source Datastore, and the configuration update is undone. After that, we must clean up the target datastore and begin the data copy procedure over. By using a webhook, you can automate the status delivery process and receive timely status updates on the data copy process, For example, you can use Microsoft Teams to get the timely status of the data copy process whenever the webMethods API Gateway undergoes a change. ",
+        "operationId" : "datacopyCore",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/MigrateDatacopyCoreRequest"
+          },
+          "x-examples" : {
+            "application/json" : "{\"targetCoreESEndpointConfig\":{\"endpoint\":\"http://ES-target-core:9200\",\"userName\":\"\",\"password\":\"\"},\"webhookConfig\":{\"endpoint\":\"https://IBM.webhook.office.com/webhookb2/389f20cc-7a1e-4748-a831-169b0f186370@d9662eb9-ad98-4e74-a8a2-04ed5d544db6/IncomingWebhook/d5224d8d40704d4398f41f11c9f81ea9/6853d033-7782-4044-9d13-1390c00393a6\",\"userName\":\"\",\"password\":\"\",\"template\":\"{\\\"@type\\\":\\\"MessageCard\\\",\\\"@context\\\":\\\"http://schema.org/extensions\\\",\\\"themeColor\\\":\\\"0076D7\\\",\\\"summary\\\":\\\"Datacopylog\\\",\\\"sections\\\":[{\\\"activityTitle\\\":\\\"Datacopystatus\\\",\\\"activitySubtitle\\\":\\\"APIGw\\\",\\\"activityImage\\\":\\\"https://teamsnodesample.azurewebsites.net/static/img/image5.png\\\",\\\"facts\\\":[{\\\"name\\\":\\\"Status\\\",\\\"value\\\":\\\"@@status@@\\\"},{\\\"name\\\":\\\"Workflow\\\",\\\"value\\\":\\\"@@workflow@@\\\"},{\\\"name\\\":\\\"Logs\\\",\\\"value\\\":\\\"@@log@@\\\"}],\\\"markdown\\\":true}]}\"}}"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "The status code indicates that the migration process has begun.The asynchronous datacopy process produces an empty success response after it has started. The timely state of the data copy process can be obtained by configuring a webhook or by retrieving the data copy process status using a REST API.",
+            "examples" : {
+              "application/json" : "{}"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/eventsandlogs" : {
+      "post" : {
+        "description" : "Triggers a datacopy action to transfer the transactional data from the source Elasticsearch to the target Datastore and also update the target Dashboard configuration. Copying data to a single node is sufficient if the destination datastore is clustered.  While dashboard availability is not required, we must ensure that the source and target datastores are accessible. There is a rollback option available in case the upgrade fails or is unsuccessful. The client is redirected to the source Datastore, and the configuration update is undone. After that, we must clean up the target datastore and begin the data copy procedure over. By using a webhook, you can automate the status delivery process and receive timely status updates on the data copy process, For example, you can use Microsoft Teams to get the timely status of the data copy process whenever the webMethods API Gateway undergoes a change. ",
+        "operationId" : "datacopyEventsandlogs",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/MigrateDatacopyEventsAndLogsRequest"
+          },
+          "x-examples" : {
+            "application/json" : "{\"targetEventsAndLogsESEndpointConfig\":{\"endpoint\":\"http://ES-target-events:9200\",\"userName\":\"\",\"password\":\"\"},\"targetDashboardConfig\":{\"endpoint\":\"http://Kibana-target:5601\"},\"webhookConfig\":{\"endpoint\":\"https://IBM.webhook.office.com/webhookb2/389f20cc-7a1e-4748-a831-169b0f186370@d9662eb9-ad98-4e74-a8a2-04ed5d544db6/IncomingWebhook/d5224d8d40704d4398f41f11c9f81ea9/6853d033-7782-4044-9d13-1390c00393a6\",\"userName\":\"\",\"password\":\"\",\"template\":\"{\\\"@type\\\":\\\"MessageCard\\\",\\\"@context\\\":\\\"http://schema.org/extensions\\\",\\\"themeColor\\\":\\\"0076D7\\\",\\\"summary\\\":\\\"Datacopylog\\\",\\\"sections\\\":[{\\\"activityTitle\\\":\\\"Datacopystatus\\\",\\\"activitySubtitle\\\":\\\"APIGw\\\",\\\"activityImage\\\":\\\"https://teamsnodesample.azurewebsites.net/static/img/image5.png\\\",\\\"facts\\\":[{\\\"name\\\":\\\"Status\\\",\\\"value\\\":\\\"@@status@@\\\"},{\\\"name\\\":\\\"Workflow\\\",\\\"value\\\":\\\"@@workflow@@\\\"},{\\\"name\\\":\\\"Logs\\\",\\\"value\\\":\\\"@@log@@\\\"}],\\\"markdown\\\":true}]}\"}}"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "The status code indicates that the events data migration process has begun. The asynchronous datacopy process produces an empty success response after it has started. The timely state of the data copy process can be obtained by configuring a webhook or by retrieving the data copy process status using a REST API.",
+            "examples" : {
+              "application/json" : "{}"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/rollback" : {
+      "post" : {
+        "description" : "The rollback option is used in case the upgrade fails or is unsuccessful. The client is redirected back to the source Datastore, and the configuration update is undone. Rollback option works on containers the same as on-prem environments",
+        "operationId" : "datacopyRollback",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/MigrateDatacopyRequest"
+          },
+          "x-examples" : {
+            "application/json" : "{\"targetCoreESEndpointConfig\":{\"endpoint\":\"http://ES-source-core:9200\",\"userName\":\"\",\"password\":\"\"},\"targetEventsAndLogsESEndpointConfig\":{\"endpoint\":\"http://ES-source-events:9200\",\"userName\":\"\",\"password\":\"\"},\"targetDashboardConfig\":{\"endpoint\":\"http://kibana-source:9405\"}}"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "The status code indicates that the rollback process has begun.",
+            "examples" : {
+              "application/json" : "{}"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/rollback/source" : {
+      "post" : {
+        "description" : "The rollback option is used in case the upgrade fails or is unsuccessful. Rollback option works on containers the same as on-prem environments",
+        "operationId" : "datacopyRollbackSource",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ ],
+        "responses" : {
+          "200" : {
+            "description" : "The status code indicates that the rollback process has begun.",
+            "examples" : {
+              "application/json" : "{}"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/status" : {
+      "get" : {
+        "description" : "Retrieves the current status of the datacopy process which is invoked in API Gateway.",
+        "operationId" : "getDatacopyStatus",
+        "produces" : [ "application/json" ],
+        "parameters" : [ ],
+        "responses" : {
+          "200" : {
+            "description" : "This status code indicates the exact status and result of the migration process.",
+            "examples" : {
+              "application/json" : "{\"datacopyStatus\":[{\"workFlowState\":\"SUCCESS\",\"taskLogs\":[{\"taskName\":\"PreMigrationCheckTask\",\"startTime\":\"29-09-202512:50:04\",\"endTime\":\"29-09-202512:50:04\",\"logs\":[\"758f00bc6f6b:MultiElasticsearchTask:Started\",\"758f00bc6f6b:Validatingdatastore:VMYAIBVTDC01L:7200\",\"758f00bc6f6b:MaxDatastoreMemory:600\",\"758f00bc6f6b:CPUThreshold:95\",\"758f00bc6f6b:MemoryThreshold:95\",\"758f00bc6f6b:DatastoreDataSize:0.61MB\",\"758f00bc6f6b:MaxDatastoreMemoryinMB:614400MB\",\"758f00bc6f6b:OSCPUPercent:9\",\"758f00bc6f6b:ProcessCPUPercent:2\",\"758f00bc6f6b:Heapusedpercent:68\",\"758f00bc6f6b:Validatingdatastore:VMYAIBVTDC01L:7200\",\"758f00bc6f6b:MaxDatastoreMemory:600\",\"758f00bc6f6b:CPUThreshold:95\",\"758f00bc6f6b:MemoryThreshold:95\",\"758f00bc6f6b:DatastoreDataSize:0.61MB\",\"758f00bc6f6b:MaxDatastoreMemoryinMB:614400MB\",\"758f00bc6f6b:OSCPUPercent:9\",\"758f00bc6f6b:ProcessCPUPercent:2\",\"758f00bc6f6b:Heapusedpercent:68\",\"758f00bc6f6b:Premigrationcheckended\"],\"state\":\"SUCCESS\"},{\"taskName\":\"CleanupStatusLogTask\",\"startTime\":\"29-09-202512:50:04\",\"endTime\":\"29-09-202512:50:05\",\"logs\":[\"758f00bc6f6b:Deletingstatuslog:migrateRollback\",\"758f00bc6f6b:Deletingstatuslog:datacopyRollback\"],\"state\":\"SUCCESS\"},{\"taskName\":\"SetQuiesceModeTask\",\"startTime\":\"29-09-202512:50:05\",\"endTime\":\"29-09-202512:50:05\",\"logs\":[\"758f00bc6f6b:ExecutingSetQuiesceModewithenableQuiesceMode:true\"],\"state\":\"SUCCESS\"},{\"taskName\":\"CreateIndicesTask\",\"startTime\":\"29-09-202512:50:05\",\"endTime\":\"29-09-202512:50:06\",\"logs\":[\"758f00bc6f6b:Indicescreationtriggered\",\"758f00bc6f6b:Indicescreationfinished\"],\"state\":\"SUCCESS\"},{\"taskName\":\"FetchAndPushTask\",\"startTime\":\"29-09-202512:50:06\",\"endTime\":\"29-09-202512:50:11\",\"logs\":[\"758f00bc6f6b:Fetchandpushdatacompleted\"],\"state\":\"SUCCESS\"},{\"taskName\":\"UpdateESClientTask\",\"startTime\":\"29-09-202512:50:11\",\"endTime\":\"29-09-202512:50:11\",\"logs\":[\"758f00bc6f6b:Updateddatastoreclient\"],\"state\":\"SUCCESS\"},{\"taskName\":\"BackupESConfigurationTask\",\"startTime\":\"29-09-202512:50:11\",\"endTime\":\"29-09-202512:50:11\",\"logs\":[\"758f00bc6f6b:Backupdatastoreconfigurationcompleted\"],\"state\":\"SUCCESS\"},{\"taskName\":\"UpdateESConfigurationTask\",\"startTime\":\"29-09-202512:50:11\",\"endTime\":\"29-09-202512:50:11\",\"logs\":[\"758f00bc6f6b:Updateddatastoreconfiguration\"],\"state\":\"SUCCESS\"},{\"taskName\":\"DisableQuiesceModeTask\",\"startTime\":\"29-09-202512:50:11\",\"endTime\":\"29-09-202512:50:11\",\"logs\":[],\"state\":\"SUCCESS\"}],\"workFlow\":\"DATACOPY_CORE\",\"inputConfig\":{\"TARGET_EVENTSLOGS_ES_ENDPOINT_BASEPATH\":\"\",\"WEBHOOK_ENDPOINT\":\"https://sagportal.webhook.office.com/webhookb2/389f20cc-7a1e-4748-a831-169b0f186370@d9662eb9-ad98-4e74-a8a2-04ed5d544db6/IncomingWebhook/d5224d8d40704d4398f41f11c9f81ea9/6853d033-7782-4044-9d13-1390c00393a6\",\"TARGET_DASHBOARD_USER\":\"\",\"WEBHOOK_TEMPLATE\":\"{\\\"@type\\\":\\\"MessageCard\\\",\\\"@context\\\":\\\"http://schema.org/extensions\\\",\\\"themeColor\\\":\\\"0076D7\\\",\\\"summary\\\":\\\"Datacopylog\\\",\\\"sections\\\":[{\\\"activityTitle\\\":\\\"Datacopystatus\\\",\\\"activitySubtitle\\\":\\\"APIGw\\\",\\\"activityImage\\\":\\\"https://teamsnodesample.azurewebsites.net/static/img/image5.png\\\",\\\"facts\\\":[{\\\"name\\\":\\\"Status\\\",\\\"value\\\":\\\"@@status@@\\\"},{\\\"name\\\":\\\"Workflow\\\",\\\"value\\\":\\\"@@workflow@@\\\"},{\\\"name\\\":\\\"Logs\\\",\\\"value\\\":\\\"@@log@@\\\"}],\\\"markdown\\\":true}]}\",\"TARGET_ES_ENDPOINT\":\"http://VMYAIBVTDC01L:7200\",\"TARGET_ES_PASSWORD\":\"******\",\"TARGET_EVENTSLOGS_ES_PASSWORD\":\"******\",\"TARGET_DASHBOARD_ENDPOINT\":\"http://VMYAIBVTDC01L:5601\",\"TARGET_EVENTSLOGS_METRICS_ES_USERID\":\"\",\"TARGET_ES_ENDPOINT_PATH\":\"\",\"TARGET_ES_USERID\":\"\",\"TARGET_EVENTSLOGS_ES_ENDPOINT\":\"http://VMYAIBVTDC01L:8200\",\"WEBHOOK_USERID\":\"\",\"WEBHOOK_PASSWORD\":\"******\"},\"subWorkFlowContext\":[],\"outData\":{}},{\"workFlowState\":\"INPROGRESS\",\"taskLogs\":[{\"taskName\":\"PreMigrationCheckTask\",\"startTime\":\"29-09-202512:50:13\",\"endTime\":\"29-09-202512:50:13\",\"logs\":[\"758f00bc6f6b:MultiElasticsearchTask:Started\",\"758f00bc6f6b:Validatingdatastore:VMYAIBVTDC01L:8200\",\"758f00bc6f6b:MaxDatastoreMemory:600\",\"758f00bc6f6b:CPUThreshold:95\",\"758f00bc6f6b:MemoryThreshold:95\",\"758f00bc6f6b:DatastoreDataSize:3.39MB\",\"758f00bc6f6b:MaxDatastoreMemoryinMB:614400MB\",\"758f00bc6f6b:OSCPUPercent:8\",\"758f00bc6f6b:ProcessCPUPercent:0\",\"758f00bc6f6b:Heapusedpercent:57\",\"758f00bc6f6b:Validatingdatastore:VMYAIBVTDC01L:7400\",\"758f00bc6f6b:MaxDatastoreMemory:600\",\"758f00bc6f6b:CPUThreshold:95\",\"758f00bc6f6b:MemoryThreshold:95\",\"758f00bc6f6b:DatastoreDataSize:2.64MB\",\"758f00bc6f6b:MaxDatastoreMemoryinMB:614400MB\",\"758f00bc6f6b:OSCPUPercent:8\",\"758f00bc6f6b:ProcessCPUPercent:1\",\"758f00bc6f6b:Heapusedpercent:48\",\"758f00bc6f6b:Premigrationcheckended\"],\"state\":\"SUCCESS\"},{\"taskName\":\"CleanupStatusLogTask\",\"startTime\":\"29-09-202512:50:13\",\"endTime\":\"29-09-202512:50:13\",\"logs\":[\"758f00bc6f6b:Deletingstatuslog:migrateRollback\",\"758f00bc6f6b:Deletingstatuslog:datacopyRollback\"],\"state\":\"SUCCESS\"},{\"taskName\":\"CreateIndicesTask\",\"startTime\":\"29-09-202512:50:13\",\"endTime\":\"29-09-202512:50:13\",\"logs\":[\"758f00bc6f6b:Indicescreationtriggered\",\"758f00bc6f6b:Indicescreationfinished\"],\"state\":\"SUCCESS\"},{\"taskName\":\"FetchAndPushTask\",\"startTime\":\"29-09-202512:50:13\",\"logs\":[],\"state\":\"INPROGRESS\"}],\"workFlow\":\"DATACOPY_EVENTSANDLOGS\",\"inputConfig\":{\"TARGET_EVENTSLOGS_ES_ENDPOINT_BASEPATH\":\"\",\"WEBHOOK_ENDPOINT\":\"https://sagportal.webhook.office.com/webhookb2/389f20cc-7a1e-4748-a831-169b0f186370@d9662eb9-ad98-4e74-a8a2-04ed5d544db6/IncomingWebhook/d5224d8d40704d4398f41f11c9f81ea9/6853d033-7782-4044-9d13-1390c00393a6\",\"TARGET_DASHBOARD_USER\":\"\",\"WEBHOOK_TEMPLATE\":\"{\\\"@type\\\":\\\"MessageCard\\\",\\\"@context\\\":\\\"http://schema.org/extensions\\\",\\\"themeColor\\\":\\\"0076D7\\\",\\\"summary\\\":\\\"Datacopylog\\\",\\\"sections\\\":[{\\\"activityTitle\\\":\\\"Datacopystatus\\\",\\\"activitySubtitle\\\":\\\"APIGw\\\",\\\"activityImage\\\":\\\"https://teamsnodesample.azurewebsites.net/static/img/image5.png\\\",\\\"facts\\\":[{\\\"name\\\":\\\"Status\\\",\\\"value\\\":\\\"@@status@@\\\"},{\\\"name\\\":\\\"Workflow\\\",\\\"value\\\":\\\"@@workflow@@\\\"},{\\\"name\\\":\\\"Logs\\\",\\\"value\\\":\\\"@@log@@\\\"}],\\\"markdown\\\":true}]}\",\"TARGET_ES_ENDPOINT\":\"http://VMYAIBVTDC01L:7200\",\"TARGET_ES_PASSWORD\":\"******\",\"TARGET_EVENTSLOGS_ES_PASSWORD\":\"******\",\"TARGET_DASHBOARD_ENDPOINT\":\"http://VMYAIBVTDC01L:5601\",\"TARGET_EVENTSLOGS_METRICS_ES_USERID\":\"\",\"TARGET_ES_ENDPOINT_PATH\":\"\",\"TARGET_ES_USERID\":\"\",\"TARGET_EVENTSLOGS_ES_ENDPOINT\":\"http://VMYAIBVTDC01L:8200\",\"WEBHOOK_USERID\":\"\",\"WEBHOOK_PASSWORD\":\"******\"},\"subWorkFlowContext\":[],\"outData\":{}}]}"
+            },
+            "schema" : {
+              "$ref" : "#/definitions/MigrateDatacopyStatusResponse"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          },
+          "409" : {
+            "description" : "This status code indicates that datacopy process has not started"
+          },
+          "500" : {
+            "description" : "This status code indicates that datacopy process has failed"
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    },
+    "/migrate/datacopy/status/rollback/source" : {
+      "get" : {
+        "description" : "Retrieves the current status of the rollback process which is invoked in API Gateway.",
+        "operationId" : "getRollbackStatusSource",
+        "produces" : [ "application/json" ],
+        "parameters" : [ ],
+        "responses" : {
+          "200" : {
+            "description" : "This status code indicates the exact status and result of the rollback process.",
+            "examples" : {
+              "application/json" : "{\"datacopyStatus\":[{\"workFlowState\":\"SUCCESS\",\"taskLogs\":[{\"taskName\":\"CleanupStatusLogTask\",\"startTime\":\"26-02-2026 09:28:38\",\"endTime\":\"26-02-2026 09:28:38\",\"logs\":[\"apigateway-1015: Deleting status log: migrateRollback\",\"apigateway-1015: Deleting status log: datacopyRollback\"],\"state\":\"SUCCESS\"},{\"taskName\":\"SetQuiesceModeTask\",\"startTime\":\"26-02-2026 09:28:38\",\"endTime\":\"26-02-2026 09:28:38\",\"logs\":[\"apigateway-1015: Executing SetQuiesceMode with enableQuiesceMode: false\"],\"state\":\"SUCCESS\"}],\"workFlow\":\"DATACOPY_ROLLBACK_SOURCE\",\"inputConfig\":{},\"subWorkFlowContext\":[],\"outData\":{}}]}"
+            },
+            "schema" : {
+              "$ref" : "#/definitions/MigrateDatacopyStatusResponse"
+            }
+          },
+          "401" : {
+            "description" : "This status code indicates that either user didn't provide right credentials or user doesn't have required privileges to access this API."
+          },
+          "409" : {
+            "description" : "This status code indicates that rollback process has not started"
+          },
+          "500" : {
+            "description" : "This status code indicates that rollback process has failed"
+          }
+        },
+        "security" : [ {
+          "Basic" : [ ]
+        } ]
+      }
+    }
+  },
+  "securityDefinitions" : {
+    "Basic" : {
+      "description" : "API Gateway Administrator and API Gateway provider",
+      "type" : "basic"
+    }
+  },
+  "definitions" : {
+    "CryptoRepositoryConfig" : {
+      "type" : "object",
+      "properties" : {
+        "alias" : {
+          "type" : "string",
+          "description" : "Alias found in Keystore/Truststore to be used"
+        },
+        "filePath" : {
+          "type" : "string",
+          "description" : "Keystore/Truststore file path"
+        },
+        "password" : {
+          "type" : "string",
+          "description" : "Keystore/Truststore password"
+        },
+        "value" : {
+          "type" : "string",
+          "description" : "Base64 encoded Keystore/Truststore"
+        }
+      }
+    },
+    "DashboardConfigDetails" : {
+      "type" : "object",
+      "properties" : {
+        "endpoint" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint"
+        },
+        "userName" : {
+          "type" : "string",
+          "description" : "Elasticsearch user name"
+        }
+      }
+    },
+    "EndpointConfigDetails" : {
+      "type" : "object",
+      "properties" : {
+        "basepath" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint basepath"
+        },
+        "endpoint" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint"
+        },
+        "keystore" : {
+          "$ref" : "#/definitions/CryptoRepositoryConfig"
+        },
+        "password" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint password"
+        },
+        "truststore" : {
+          "$ref" : "#/definitions/CryptoRepositoryConfig"
+        },
+        "userName" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint user name"
+        }
+      }
+    },
+    "MigrateDatacopyCoreRequest" : {
+      "type" : "object",
+      "properties" : {
+        "targetCoreEndpointConfig" : {
+          "$ref" : "#/definitions/EndpointConfigDetails"
+        },
+        "webhookConfig" : {
+          "$ref" : "#/definitions/WebhookConfigDetails"
+        }
+      }
+    },
+    "MigrateDatacopyEventsAndLogsRequest" : {
+      "type" : "object",
+      "properties" : {
+        "targetDashboardConfig" : {
+          "$ref" : "#/definitions/DashboardConfigDetails"
+        },
+        "targetEventsLogsEndpointConfig" : {
+          "$ref" : "#/definitions/EndpointConfigDetails"
+        },
+        "webhookConfig" : {
+          "$ref" : "#/definitions/WebhookConfigDetails"
+        }
+      }
+    },
+    "MigrateDatacopyRequest" : {
+      "type" : "object",
+      "properties" : {
+        "targetCoreEndpointConfig" : {
+          "$ref" : "#/definitions/EndpointConfigDetails"
+        },
+        "targetDashboardConfig" : {
+          "$ref" : "#/definitions/DashboardConfigDetails"
+        },
+        "targetEventsLogsEndpointConfig" : {
+          "$ref" : "#/definitions/EndpointConfigDetails"
+        },
+        "webhookConfig" : {
+          "$ref" : "#/definitions/WebhookConfigDetails"
+        }
+      }
+    },
+    "MigrateDatacopyStatusResponse" : {
+      "type" : "object",
+      "properties" : {
+        "datacopyStatus" : {
+          "type" : "array",
+          "description" : "status of the migration process workflow execution",
+          "items" : {
+            "$ref" : "#/definitions/MigrationWorkFlowContext"
+          }
+        }
+      }
+    },
+    "MigrationWorkFlowContext" : {
+      "type" : "object",
+      "properties" : {
+        "inputConfig" : {
+          "type" : "object",
+          "additionalProperties" : {
+            "type" : "string"
+          }
+        },
+        "outData" : {
+          "type" : "object",
+          "additionalProperties" : {
+            "type" : "string"
+          }
+        },
+        "subWorkFlowContext" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/MigrationWorkFlowContext"
+          }
+        },
+        "taskLogs" : {
+          "type" : "array",
+          "items" : {
+            "$ref" : "#/definitions/TaskLog"
+          }
+        },
+        "workFlow" : {
+          "type" : "string",
+          "enum" : [ "CORE_SOURCE", "CORE_TARGET", "EVENTS_AND_LOGS_SOURCE", "EVENTS_AND_LOGS_TARGET", "ROLLBACK_SOURCE", "ROLLBACK_TARGET", "DATACOPY_CORE", "DATACOPY_EVENTSANDLOGS", "DATACOPY_ROLLBACK", "DATACOPY_CORE_WITHOUT_SWITCH", "DATACOPY_EVENTSANDLOGS_WITHOUT_SWITCH", "DATACOPY_ROLLBACK_SOURCE", "IMPORT_DATA", "RESTORE_REINDEX_SWITCH", "RESTORE_REINDEX_SWITCH_01", "RESTORE_REINDEX_SWITCH_02", "RESTORE_REINDEX_SWITCH_03", "RESTORE_REINDEX_SWITCH_04", "RESTORE_REINDEX_SWITCH_05", "RESTORE_REINDEX_SWITCH_06" ]
+        },
+        "workFlowState" : {
+          "type" : "string",
+          "enum" : [ "INPROGRESS", "SUCCESS", "FAILURE", "PARTIAL" ]
+        }
+      }
+    },
+    "TaskLog" : {
+      "type" : "object",
+      "properties" : {
+        "endTime" : {
+          "type" : "string"
+        },
+        "logs" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "startTime" : {
+          "type" : "string"
+        },
+        "state" : {
+          "type" : "string",
+          "enum" : [ "INPROGRESS", "SUCCESS", "FAILURE", "PARTIAL" ]
+        },
+        "taskName" : {
+          "type" : "string"
+        }
+      }
+    },
+    "WebhookConfigDetails" : {
+      "type" : "object",
+      "properties" : {
+        "endpoint" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint"
+        },
+        "password" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint password"
+        },
+        "template" : {
+          "type" : "string",
+          "description" : "webhook payload template to be posted to webhook endpoint.Available variables to be used in the template are @@status@@, @@workflow@@ and @@log@@ "
+        },
+        "userName" : {
+          "type" : "string",
+          "description" : "Elasticsearch endpoint user name"
+        }
+      }
+    }
+  }
+}

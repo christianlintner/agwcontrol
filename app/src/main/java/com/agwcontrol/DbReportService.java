@@ -206,6 +206,7 @@ public class DbReportService {
 
                 RoutingEndpoint firstEp = endpoints.get(0);
                 String url = firstEp.getResolvedUrl();
+                if (url == null) continue;
 
                 // ersten passenden Check-Eintrag für diese URL suchen
                 CheckRow matchingCheck = null;

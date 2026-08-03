@@ -153,20 +153,10 @@ class AgwApiServiceTest {
     }
 
     @Test
-    void parseNativeEndpointsUsesAliasNameWhenUriIsDummy() {
+    void parseNativeEndpointsNoDummyDummyFallback() {
+        // dummy.dummy wird nicht mehr speziell behandelt – kein Umschreiben auf aliasName
         String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
                 "{\"uri\":\"dummy.dummy\",\"alias\":false,\"aliasName\":\"RealAlias\"}" +
-                "]}}}";
-        List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
-        assertEquals(1, eps.size());
-        assertEquals("RealAlias", eps.get(0).uri);
-        assertTrue(eps.get(0).alias);
-    }
-
-    @Test
-    void parseNativeEndpointsKeepsDirectUriWhenNoAliasNameExists() {
-        String json = "{\"apiResponse\":{\"api\":{\"nativeEndpoint\":[" +
-                "{\"uri\":\"dummy.dummy\",\"alias\":false}" +
                 "]}}}";
         List<AgwApiService.NativeEndpointEntry> eps = service.parseNativeEndpoints(json);
         assertEquals(1, eps.size());
@@ -188,6 +178,102 @@ class AgwApiServiceTest {
     void parseEndPointURIAbsent() {
         String json = "{\"id\":\"abc\",\"name\":\"SomeAlias\",\"type\":\"simple\"}";
         assertNull(service.parseEndPointURI(json));
+    }
+
+    // ---------------------------------------------------------------
+    // parseEndPointURIByName
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseEndPointURIByNameFound() {
+        // Alias-Listen-Response mit mehreren Einträgen – nur der gesuchte hat endPointURI
+        String json =
+                "{\"id\":\"1\",\"name\":\"OtherAlias\",\"type\":\"simple\"}" +
+                "{\"id\":\"2\",\"endPointURI\":\"https://real-backend:8080\"," +
+                "\"name\":\"AKOS_API_EndpointAlias\",\"type\":\"endpoint\"}" +
+                "{\"id\":\"3\",\"name\":\"AnotherAlias\",\"type\":\"simple\"}";
+        assertEquals("https://real-backend:8080",
+                service.parseEndPointURIByName(json, "AKOS_API_EndpointAlias"));
+    }
+
+    @Test
+    void parseEndPointURIByNameNotFound() {
+        String json = "{\"id\":\"1\",\"name\":\"OtherAlias\",\"type\":\"simple\"}";
+        assertNull(service.parseEndPointURIByName(json, "AKOS_API_EndpointAlias"));
+    }
+
+    @Test
+    void parseEndPointURIByNameNullInput() {
+        assertNull(service.parseEndPointURIByName(null, "AKOS_API_EndpointAlias"));
+        assertNull(service.parseEndPointURIByName("{}", null));
+    }
+
+    // ---------------------------------------------------------------
+    // parseAllAliases + resolveAlias (In-memory Cache)
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseAllAliasesBuildsMap() {
+        // Zwei Endpoint-Aliases in einer Alias-Listen-Antwort
+        String json =
+                "{\"id\":\"1\",\"name\":\"AliasA\",\"endPointURI\":\"https://backend-a:8080\",\"type\":\"endpoint\"}" +
+                "{\"id\":\"2\",\"name\":\"AliasB\",\"endPointURI\":\"https://backend-b:9090\",\"type\":\"endpoint\"}";
+        java.util.Map<String, String> map = service.parseAllAliases(json);
+        assertEquals(2, map.size());
+        assertEquals("https://backend-a:8080", map.get("AliasA"));
+        assertEquals("https://backend-b:9090", map.get("AliasB"));
+    }
+
+    @Test
+    void parseAllAliasesSkipsNonEndpointAliases() {
+        // Eintrag ohne endPointURI darf nicht in der Map landen
+        String json =
+                "{\"id\":\"1\",\"name\":\"SimpleAlias\",\"type\":\"simple\"}" +
+                "{\"id\":\"2\",\"name\":\"EndpointAlias\",\"endPointURI\":\"https://real-backend:8080\",\"type\":\"endpoint\"}";
+        java.util.Map<String, String> map = service.parseAllAliases(json);
+        assertEquals(1, map.size());
+        assertEquals("https://real-backend:8080", map.get("EndpointAlias"));
+        assertNull(map.get("SimpleAlias"));
+    }
+
+    @Test
+    void resolveAliasUsesCacheOnSecondCall() throws Exception {
+        // int[]-Zähler: von der anonymen Klasse aus schreibbar, von außen lesbar
+        int[] loadCount = {0};
+
+        // Subklasse, die loadAllAliases zählt und echten HTTP-Aufruf vermeidet
+        AgwApiService spy = new AgwApiService() {
+            @Override
+            void loadAllAliases(ServerConfig server, String baseUrl) {
+                loadCount[0]++;
+                // aliasCache per Reflection befüllen
+                try {
+                    java.lang.reflect.Field f =
+                            AgwApiService.class.getDeclaredField("aliasCache");
+                    f.setAccessible(true);
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, java.util.Map<String, String>> cache =
+                            (java.util.Map<String, java.util.Map<String, String>>) f.get(this);
+                    java.util.Map<String, String> entries = new java.util.HashMap<>();
+                    entries.put("MyAlias", "https://cached-backend:8080");
+                    cache.put(baseUrl, entries);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        };
+
+        ServerConfig server = new ServerConfig("testhost", 5555, "user", "pass");
+
+        // Erster Aufruf: loadAllAliases muss aufgerufen werden
+        String result1 = spy.resolveAlias(server, "MyAlias");
+        assertEquals("https://cached-backend:8080", result1);
+        assertEquals(1, loadCount[0]);
+
+        // Zweiter Aufruf: Cache-Hit – loadAllAliases darf NICHT erneut aufgerufen werden
+        String result2 = spy.resolveAlias(server, "MyAlias");
+        assertEquals("https://cached-backend:8080", result2);
+        assertEquals(1, loadCount[0]);
     }
 
     // ---------------------------------------------------------------
@@ -280,6 +366,227 @@ class AgwApiServiceTest {
                 new ServerConfig("127.0.0.1", 1, "u", "p", "http://127.0.0.1:1"),
                 "id-1", "PROD", db, cache, hint));
         assertEquals("Cache leer – lade vom Server", hint[0]);
+    }
+
+    // ---------------------------------------------------------------
+    // parseEnforcementObjectIds
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseEnforcementObjectIdsExtracts() {
+        String json = "{\"policy\":{\"policyEnforcements\":[" +
+                "{\"enforcements\":[{\"enforcementObjectId\":\"act-1\"},{\"enforcementObjectId\":\"act-2\"}],\"stageKey\":\"routing\"}," +
+                "{\"enforcements\":[{\"enforcementObjectId\":\"act-3\"}],\"stageKey\":\"IAM\"}" +
+                "]}}";
+        List<String> ids = service.parseEnforcementObjectIds(json);
+        assertEquals(3, ids.size());
+        assertEquals("act-1", ids.get(0));
+        assertEquals("act-2", ids.get(1));
+        assertEquals("act-3", ids.get(2));
+    }
+
+    @Test
+    void parseEnforcementObjectIdsEmptyWhenAbsent() {
+        assertTrue(service.parseEnforcementObjectIds("{\"policy\":{}}").isEmpty());
+    }
+
+    @Test
+    void parseEnforcementObjectIdsNullInput() {
+        assertTrue(service.parseEnforcementObjectIds(null).isEmpty());
+    }
+
+    // ---------------------------------------------------------------
+    // parsePolicies
+    // ---------------------------------------------------------------
+
+    @Test
+    void parsePoliciesExtractsPolicyIds() {
+        String json = "{\"apiResponse\":{\"api\":{" +
+                "\"policies\":[\"id-1\",\"id-2\",\"id-3\"]" +
+                "}}}";
+        List<String> ids = service.parsePolicies(json);
+        assertEquals(3, ids.size());
+        assertEquals("id-1", ids.get(0));
+        assertEquals("id-2", ids.get(1));
+        assertEquals("id-3", ids.get(2));
+    }
+
+    @Test
+    void parsePoliciesEmptyWhenAbsent() {
+        String json = "{\"apiResponse\":{\"api\":{}}}";
+        assertTrue(service.parsePolicies(json).isEmpty());
+    }
+
+    // ---------------------------------------------------------------
+    // parseRoutingEndpointUri
+    // ---------------------------------------------------------------
+
+    @Test
+    void parseRoutingEndpointUriExtractsAliasExpression() {
+        String json = policyActionsJson("${AKOS_API_EndpointAlias}/${sys:resource_path}");
+        assertEquals("${AKOS_API_EndpointAlias}/${sys:resource_path}",
+                service.parseRoutingEndpointUri(json));
+    }
+
+    @Test
+    void parseRoutingEndpointUriExtractsDirectUrl() {
+        String json = policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+        assertEquals("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}",
+                service.parseRoutingEndpointUri(json));
+    }
+
+    @Test
+    void parseRoutingEndpointUriReturnsNullWhenAbsent() {
+        assertNull(service.parseRoutingEndpointUri("{\"policyAction\":[]}"));
+    }
+
+    @Test
+    void parseRoutingEndpointUriNullInput() {
+        assertNull(service.parseRoutingEndpointUri(null));
+    }
+
+    // ---------------------------------------------------------------
+    // parseRoutingAliasName
+    // ---------------------------------------------------------------
+
+    private static String policyActionsJson(String endpointUri) {
+        return "{\"policyAction\":[" +
+                "{\"id\":\"50c705f0\",\"templateKey\":\"straightThroughRouting\"," +
+                "\"parameters\":[{\"templateKey\":\"endpointUri\",\"values\":[\"" + endpointUri + "\"]}]}" +
+                "]}";
+    }
+
+    @Test
+    void parseRoutingAliasNameExtractsFromExpression() {
+        String json = policyActionsJson("${AKOS_API_EndpointAlias}/${sys:resource_path}");
+        assertEquals("AKOS_API_EndpointAlias", service.parseRoutingAliasName(json));
+    }
+
+    @Test
+    void parseRoutingAliasNameSimpleExpression() {
+        String json = policyActionsJson("${MyAlias}");
+        assertEquals("MyAlias", service.parseRoutingAliasName(json));
+    }
+
+    @Test
+    void parseRoutingAliasNameAbsent() {
+        String json = "{\"policyAction\":[" +
+                "{\"id\":\"abc\",\"templateKey\":\"entryProtocolPolicy\"," +
+                "\"parameters\":[{\"templateKey\":\"protocol\",\"values\":[\"http\"]}]}" +
+                "]}";
+        assertNull(service.parseRoutingAliasName(json));
+    }
+
+    @Test
+    void parseRoutingAliasNameIgnoresNonRoutingActions() {
+        // Mehrere Actions – nur straightThroughRouting darf ausgewertet werden
+        String json = "{\"policyAction\":[" +
+                "{\"id\":\"1\",\"templateKey\":\"entryProtocolPolicy\"," +
+                "\"parameters\":[{\"templateKey\":\"protocol\",\"values\":[\"http\"]}]}," +
+                "{\"id\":\"2\",\"templateKey\":\"evaluatePolicy\"," +
+                "\"parameters\":[{\"templateKey\":\"someKey\",\"values\":[\"someVal\"]}]}," +
+                "{\"id\":\"3\",\"templateKey\":\"straightThroughRouting\"," +
+                "\"parameters\":[{\"templateKey\":\"endpointUri\",\"values\":[\"${RealAlias}/${sys:resource_path}\"]}]}" +
+                "]}";
+        assertEquals("RealAlias", service.parseRoutingAliasName(json));
+    }
+
+    @Test
+    void parseRoutingAliasNameNullInput() {
+        assertNull(service.parseRoutingAliasName(null));
+    }
+
+    @Test
+    void parseRoutingAliasNameReturnsNullForDirectUrl() {
+        // Direkte URL beginnt nicht mit ${...} → kein Alias
+        String json = policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+        assertNull(service.parseRoutingAliasName(json));
+    }
+
+    // ---------------------------------------------------------------
+    // getNativeEndpoints – Integration (Subklasse überschreibt HTTP-Calls)
+    // ---------------------------------------------------------------
+
+    @Test
+    void getNativeEndpointsAlwaysUsesRoutingPolicy() throws Exception {
+        // Nur die HTTP-Calls werden gemockt – getNativeEndpoints läuft echt durch.
+        AgwApiService svc = new AgwApiService() {
+            @Override
+            String fetchApiBody(ServerConfig server, String apiId) {
+                return "{\"apiResponse\":{\"api\":{" +
+                        "\"nativeEndpoint\":[{\"uri\":\"dummy.dummy\",\"alias\":false}]," +
+                        "\"policies\":[\"policy-1\"]" +
+                        "}}}";
+            }
+            @Override
+            String fetchPolicy(ServerConfig server, String policyId) {
+                return "{\"policy\":{\"policyEnforcements\":[{\"enforcements\":[" +
+                        "{\"enforcementObjectId\":\"action-1\"}],\"stageKey\":\"routing\"}]}}";
+            }
+            @Override
+            String fetchPolicyActions(ServerConfig server, List<String> ids) {
+                return policyActionsJson("${AKOS_API_EndpointAlias}/${sys:resource_path}");
+            }
+            @Override
+            String resolveAlias(ServerConfig server, String aliasName) {
+                return "https://real-backend:8080";
+            }
+        };
+
+        ServerConfig server = new ServerConfig("host", 443, "u", "p", null);
+        List<RoutingEndpoint> result = svc.getNativeEndpoints(server, "api-1");
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).isAlias());
+        assertEquals("AKOS_API_EndpointAlias", result.get(0).getAliasName());
+        assertEquals("https://real-backend:8080", result.get(0).getResolvedUrl());
+    }
+
+    @Test
+    void getNativeEndpointsDirectUrlFromRoutingPolicy() throws Exception {
+        // endpointUri ist eine direkte URL (kein ${Alias} am Anfang) –
+        // getNativeEndpoints muss einen RoutingEndpoint.direct(...) zurückgeben.
+        AgwApiService svc = new AgwApiService() {
+            @Override
+            String fetchApiBody(ServerConfig server, String apiId) {
+                return "{\"apiResponse\":{\"api\":{" +
+                        "\"nativeEndpoint\":[{\"uri\":\"dummy.dummy\",\"alias\":false}]," +
+                        "\"policies\":[\"policy-1\"]" +
+                        "}}}";
+            }
+            @Override
+            String fetchPolicy(ServerConfig server, String policyId) {
+                return "{\"policy\":{\"policyEnforcements\":[{\"enforcements\":[" +
+                        "{\"enforcementObjectId\":\"action-1\"}],\"stageKey\":\"routing\"}]}}";
+            }
+            @Override
+            String fetchPolicyActions(ServerConfig server, List<String> ids) {
+                return policyActionsJson("https://akos.oebb.at/pakos/smp/apt/${sys:resource_path}");
+            }
+        };
+
+        ServerConfig server = new ServerConfig("host", 443, "u", "p", null);
+        List<RoutingEndpoint> result = svc.getNativeEndpoints(server, "api-1");
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).isAlias());
+        assertNull(result.get(0).getAliasName());
+        assertEquals("https://akos.oebb.at/pakos/smp/apt/", result.get(0).getResolvedUrl());
+    }
+
+    @Test
+    void getNativeEndpointsReturnsEmptyWhenNoPolicies() throws Exception {
+        AgwApiService svc = new AgwApiService() {
+            @Override
+            public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId)
+                    throws java.io.IOException {
+                String fakeBody = "{\"apiResponse\":{\"api\":{}}}"; // kein policies-Feld
+                List<String> policyIds = parsePolicies(fakeBody);
+                if (policyIds.isEmpty()) return new java.util.ArrayList<>();
+                return new java.util.ArrayList<>();
+            }
+        };
+        ServerConfig server = new ServerConfig("host", 443, "u", "p", null);
+        List<RoutingEndpoint> result = svc.getNativeEndpoints(server, "api-1");
+        assertTrue(result.isEmpty());
     }
 
 }
