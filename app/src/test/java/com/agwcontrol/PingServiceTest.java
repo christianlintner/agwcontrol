@@ -2,6 +2,8 @@ package com.agwcontrol;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class PingServiceTest {
@@ -39,5 +41,60 @@ class PingServiceTest {
         PingResult result = new PingService().ping("192.0.2.1", 500);
         assertFalse(result.isReachable());
         assertEquals(-1, result.getResponseTimeMs());
+    }
+
+    @Test
+    void pingAllIncludesAgwOnly() {
+        ServerConfig server = new ServerConfig("127.0.0.1", 443);
+        List<PingResult> results = new PingService().pingAll(server);
+
+        assertEquals(1, results.size());
+        assertEquals("AGW", results.get(0).getLabel());
+        assertEquals("127.0.0.1", results.get(0).getHost());
+    }
+
+    @Test
+    void pingAllIncludesAllUrls() {
+        ServerConfig server = new ServerConfig(
+                "127.0.0.1", 443,
+                null, null,
+                "https://127.0.0.1:443",
+                "https://127.0.0.1:443",
+                "https://127.0.0.1:443"
+        );
+        List<PingResult> results = new PingService().pingAll(server);
+
+        assertEquals(4, results.size());
+        assertEquals("AGW",          results.get(0).getLabel());
+        assertEquals("IS",           results.get(1).getLabel());
+        assertEquals("CLUSTER",      results.get(2).getLabel());
+        assertEquals("CLUSTER-CERT", results.get(3).getLabel());
+    }
+
+    @Test
+    void pingAllSkipsMissingUrls() {
+        ServerConfig server = new ServerConfig(
+                "127.0.0.1", 443,
+                null, null,
+                null,
+                "https://127.0.0.1:443",
+                null
+        );
+        List<PingResult> results = new PingService().pingAll(server);
+
+        assertEquals(2, results.size());
+        assertEquals("AGW",     results.get(0).getLabel());
+        assertEquals("CLUSTER", results.get(1).getLabel());
+    }
+
+    @Test
+    void hostFromUrlExtractsHost() {
+        assertEquals("apigateway-oh-preprod.oebb.at",
+                PingService.hostFromUrl("https://apigateway-oh-preprod.oebb.at"));
+    }
+
+    @Test
+    void hostFromUrlReturnsNullOnInvalid() {
+        assertNull(PingService.hostFromUrl("not a url :::"));
     }
 }
