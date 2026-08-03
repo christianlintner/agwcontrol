@@ -38,7 +38,10 @@ public class RoutingEndpoint {
         return aliasName;
     }
 
-    /** @return Die aufgelöste URL (niemals {@code null} wenn Auflösung erfolgreich). */
+    /**
+     * @return Die aufgelöste URL, oder {@code null} wenn der Alias im Zielsystem nicht
+     *         aufgelöst werden konnte (z.&nbsp;B. kein {@code endPointURI} im Response).
+     */
     public String getResolvedUrl() {
         return resolvedUrl;
     }
