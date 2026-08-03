@@ -72,18 +72,21 @@ public class KeePassConfigLoader {
                 System.err.println("Warnung: URL \"" + url + "\" in Eintrag \"" + entry.getTitle() + "\" konnte nicht geparst werden – wird übersprungen.");
                 continue;
             }
-            String isUrl = readIsUrl(entry);
-            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword(), isUrl));
+            String isUrl          = readCustomField(entry, "IS-URL");
+            String clusterUrl     = readCustomField(entry, "CLUSTER-URL");
+            String clusterCertUrl = readCustomField(entry, "CLUSTER-CERT-URL");
+            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword(),
+                    isUrl, clusterUrl, clusterCertUrl));
         }
         return servers;
     }
 
     /**
-     * Liest das Custom Field "IS-URL" aus einem KeePass-Eintrag.
-     * Fehlt das Feld, wird null zurückgegeben.
+     * Liest ein Custom Field aus einem KeePass-Eintrag.
+     * Fehlt das Feld oder ist es leer, wird null zurückgegeben.
      */
-    private String readIsUrl(Entry entry) {
-        Property prop = entry.getPropertyByName("IS-URL");
+    private String readCustomField(Entry entry, String fieldName) {
+        Property prop = entry.getPropertyByName(fieldName);
         if (prop == null) return null;
         String value = prop.getValue();
         return (value == null || value.trim().isEmpty()) ? null : value.trim();

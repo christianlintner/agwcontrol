@@ -199,7 +199,7 @@ public class InteractiveMenu {
         List<PingResult> results = new ArrayList<>();
         for (ServerGroup group : selected) {
             for (ServerConfig server : group.getServers()) {
-                results.add(pingService.ping(server));
+                results.addAll(pingService.pingAll(server));
             }
         }
         out.println();
@@ -210,7 +210,7 @@ public class InteractiveMenu {
         List<TcpCheckResult> results = new ArrayList<>();
         for (ServerGroup group : selected) {
             for (ServerConfig server : group.getServers()) {
-                results.add(tcpService.check(server));
+                results.addAll(tcpService.checkAll(server));
             }
         }
         out.println();

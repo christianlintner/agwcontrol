@@ -1,5 +1,6 @@
 package com.agwcontrol;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -14,6 +15,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class KeePassConfigLoaderTest {
 
     private static final String MASTER_PASSWORD = "test1234";
+
+    @BeforeAll
+    static void ensureClusterUrlInTestKdbx() throws Exception {
+        URL resource = KeePassConfigLoaderTest.class.getClassLoader().getResource("test.kdbx");
+        assertNotNull(resource, "test.kdbx nicht in src/test/resources gefunden");
+        UpdateTestKdbx.updateIfNeeded(Paths.get(resource.toURI()));
+    }
 
     private Path testKdbx() throws URISyntaxException {
         URL resource = getClass().getClassLoader().getResource("test.kdbx");
@@ -105,5 +113,42 @@ class KeePassConfigLoaderTest {
                 .flatMap(g -> g.getServers().stream())
                 .forEach(c -> assertNotNull(c.getIsUrl(),
                         "IS-URL fehlt bei Eintrag: " + c.getHost()));
+    }
+
+    @Test
+    void parsesClusterUrl() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // OH-DEV erster Eintrag hat CLUSTER-URL (durch UpdateTestKdbx gesetzt)
+        ServerGroup ohDev = groups.stream()
+                .filter(g -> "OH-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe OH-DEV nicht gefunden"));
+        ServerConfig entry = ohDev.getServers().get(0);
+        assertNotNull(entry.getClusterUrl(), "CLUSTER-URL muss gesetzt sein");
+        assertEquals("https://apigateway-oh-dev.oebb.at", entry.getClusterUrl());
+    }
+
+    @Test
+    void parsesClusterCertUrl() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        ServerGroup ohDev = groups.stream()
+                .filter(g -> "OH-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe OH-DEV nicht gefunden"));
+        ServerConfig entry = ohDev.getServers().get(0);
+        assertNotNull(entry.getClusterCertUrl(), "CLUSTER-CERT-URL muss gesetzt sein");
+        assertEquals("https://apigateway-cert-oh-dev.oebb.at", entry.getClusterCertUrl());
+    }
+
+    @Test
+    void missingClusterUrlReturnsNull() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // DN2020-DEV hat keinen CLUSTER-URL → null erwartet
+        ServerGroup dn = groups.stream()
+                .filter(g -> "DN2020-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe DN2020-DEV nicht gefunden"));
+        ServerConfig entry = dn.getServers().get(0);
+        assertNull(entry.getClusterUrl(), "DN2020-DEV sollte keine CLUSTER-URL haben");
     }
 }
