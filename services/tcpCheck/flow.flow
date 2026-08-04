@@ -1,0 +1,111 @@
+interface api
+
+service tcpCheck (
+    input {
+        String host;
+        String port;
+        String timeoutMs;
+    }
+    output {
+        String host;
+        String port;
+        String open;
+        String responseTimeMs;
+    }
+)
+properties {
+    comment: "Tests TCP connectivity to the given host and port via Socket and returns open status and response time.";
+}
+{
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String host;
+                String port;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy host -> message;
+            set function = "tcpCheck";
+            set level = "Info";
+        }
+    }
+    TRY {
+        INVOKE OEBB_Infra_Pro_AGWCheck.utils:tcpCheck {
+            input {
+                mapSource {
+                    String host;
+                    String port;
+                    String timeoutMs;
+                }
+                mapTarget {
+                    String host;
+                    String port;
+                    String timeoutMs;
+                }
+                copy host -> host;
+                copy port -> port;
+                copy timeoutMs -> timeoutMs;
+            }
+            output {
+                mapSource {
+                    String host;
+                    String port;
+                    String open;
+                    String responseTimeMs;
+                }
+                mapTarget {
+                    String host;
+                    String port;
+                    String open;
+                    String responseTimeMs;
+                }
+                copy host -> host;
+                copy port -> port;
+                copy open -> open;
+                copy responseTimeMs -> responseTimeMs;
+            }
+        }
+        INVOKE pub.flow:debugLog {
+            input {
+                mapSource {
+                    String open;
+                    String responseTimeMs;
+                }
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                copy open -> message;
+                set function = "tcpCheck";
+                set level = "Info";
+            }
+        }
+    }
+    CATCH {
+        INVOKE pub.flow:debugLog {
+            input {
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                set message = "TCP check failed with exception";
+                set function = "tcpCheck";
+                set level = "Error";
+            }
+        }
+        MAP {
+            mapTarget {
+                String open;
+                String responseTimeMs;
+            }
+            set open = "false";
+            set responseTimeMs = "-1";
+        }
+    }
+}
