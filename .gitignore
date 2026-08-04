@@ -23,3 +23,5 @@ servers.kdbx.bak
 reports/*
 agwcontrol.db
 app/report*.csv
+
+/.bob/
