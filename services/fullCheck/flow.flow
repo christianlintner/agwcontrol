@@ -1,0 +1,278 @@
+interface api
+
+service fullCheck (
+    input {
+        String url;
+    }
+    output {
+        String url;
+        String host;
+        String resolvedIp;
+        String pingReachable;
+        String pingResponseTimeMs;
+        String tcpPort;
+        String tcpOpen;
+        String tcpResponseTimeMs;
+        String httpStatus;
+        String httpReachable;
+        String httpErrorMsg;
+    }
+)
+properties {
+    comment: "Performs a full endpoint check: DNS resolution, ping, TCP connect, and HTTP GET. Returns all results combined.";
+}
+{
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String url;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy url -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    INVOKE OEBB_Infra_Pro_AGWCheck.utils:parseUrl {
+        input {
+            mapSource {
+                String url;
+            }
+            mapTarget {
+                String url;
+            }
+            copy url -> url;
+        }
+        output {
+            mapSource {
+                String host;
+                String port;
+            }
+            mapTarget {
+                String parsedHost;
+                String parsedPort;
+            }
+            copy host -> parsedHost;
+            copy port -> parsedPort;
+        }
+    }
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String parsedHost;
+                String parsedPort;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy parsedHost -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    MAP {
+        mapTarget {
+            String pingTimeoutMs;
+            String tcpTimeoutMs;
+            String httpConnectTimeoutMs;
+            String httpReadTimeoutMs;
+            String httpSkipSsl;
+        }
+        set pingTimeoutMs = "2000";
+        set tcpTimeoutMs = "2000";
+        set httpConnectTimeoutMs = "10000";
+        set httpReadTimeoutMs = "15000";
+        set httpSkipSsl = "false";
+    }
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:resolveHost {
+        input {
+            mapSource {
+                String url;
+            }
+            mapTarget {
+                String url;
+            }
+            copy url -> url;
+        }
+        output {
+            mapSource {
+                String host;
+                String resolvedIp;
+            }
+            mapTarget {
+                String resolvedHost;
+                String resolvedIp;
+            }
+            copy host -> resolvedHost;
+            copy resolvedIp -> resolvedIp;
+        }
+    }
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String resolvedIp;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy resolvedIp -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:ping {
+        input {
+            mapSource {
+                String parsedHost;
+                String pingTimeoutMs;
+            }
+            mapTarget {
+                String host;
+                String timeoutMs;
+            }
+            copy parsedHost -> host;
+            copy pingTimeoutMs -> timeoutMs;
+        }
+        output {
+            mapSource {
+                String reachable;
+                String responseTimeMs;
+            }
+            mapTarget {
+                String pingReachable;
+                String pingResponseTimeMs;
+            }
+            copy reachable -> pingReachable;
+            copy responseTimeMs -> pingResponseTimeMs;
+        }
+    }
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String pingReachable;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy pingReachable -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:tcpCheck {
+        input {
+            mapSource {
+                String parsedHost;
+                String parsedPort;
+                String tcpTimeoutMs;
+            }
+            mapTarget {
+                String host;
+                String port;
+                String timeoutMs;
+            }
+            copy parsedHost -> host;
+            copy parsedPort -> port;
+            copy tcpTimeoutMs -> timeoutMs;
+        }
+        output {
+            mapSource {
+                String open;
+                String responseTimeMs;
+            }
+            mapTarget {
+                String tcpOpen;
+                String tcpResponseTimeMs;
+            }
+            copy open -> tcpOpen;
+            copy responseTimeMs -> tcpResponseTimeMs;
+        }
+    }
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String tcpOpen;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy tcpOpen -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:httpGet {
+        input {
+            mapSource {
+                String url;
+                String httpConnectTimeoutMs;
+                String httpReadTimeoutMs;
+                String httpSkipSsl;
+            }
+            mapTarget {
+                String url;
+                String connectTimeoutMs;
+                String readTimeoutMs;
+                String skipSslVerification;
+            }
+            copy url -> url;
+            copy httpConnectTimeoutMs -> connectTimeoutMs;
+            copy httpReadTimeoutMs -> readTimeoutMs;
+            copy httpSkipSsl -> skipSslVerification;
+        }
+        output {
+            mapSource {
+                String httpStatus;
+                String reachable;
+                String errorMsg;
+            }
+            mapTarget {
+                String httpStatus;
+                String httpReachable;
+                String httpErrorMsg;
+            }
+            copy httpStatus -> httpStatus;
+            copy reachable -> httpReachable;
+            copy errorMsg -> httpErrorMsg;
+        }
+    }
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String httpStatus;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy httpStatus -> message;
+            set function = "fullCheck";
+            set level = "Info";
+        }
+    }
+    MAP {
+        mapSource {
+            String parsedPort;
+            String resolvedHost;
+        }
+        mapTarget {
+            String host;
+            String tcpPort;
+        }
+        copy resolvedHost -> host;
+        copy parsedPort -> tcpPort;
+    }
+}
