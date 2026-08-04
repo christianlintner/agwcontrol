@@ -1,0 +1,102 @@
+interface api
+
+service ping (
+    input {
+        String host;
+        String timeoutMs;
+    }
+    output {
+        String host;
+        String reachable;
+        String responseTimeMs;
+    }
+)
+properties {
+    comment: "Pings the given host using InetAddress.isReachable() and returns reachability and response time.";
+}
+{
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String host;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy host -> message;
+            set function = "ping";
+            set level = "Info";
+        }
+    }
+    TRY {
+        INVOKE OEBB_Infra_Pro_AGWCheck.utils:ping {
+            input {
+                mapSource {
+                    String host;
+                    String timeoutMs;
+                }
+                mapTarget {
+                    String host;
+                    String timeoutMs;
+                }
+                copy host -> host;
+                copy timeoutMs -> timeoutMs;
+            }
+            output {
+                mapSource {
+                    String host;
+                    String reachable;
+                    String responseTimeMs;
+                }
+                mapTarget {
+                    String host;
+                    String reachable;
+                    String responseTimeMs;
+                }
+                copy host -> host;
+                copy reachable -> reachable;
+                copy responseTimeMs -> responseTimeMs;
+            }
+        }
+        INVOKE pub.flow:debugLog {
+            input {
+                mapSource {
+                    String reachable;
+                    String responseTimeMs;
+                }
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                copy reachable -> message;
+                set function = "ping";
+                set level = "Info";
+            }
+        }
+    }
+    CATCH {
+        INVOKE pub.flow:debugLog {
+            input {
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                set message = "Ping failed with exception";
+                set function = "ping";
+                set level = "Error";
+            }
+        }
+        MAP {
+            mapTarget {
+                String reachable;
+                String responseTimeMs;
+            }
+            set reachable = "false";
+            set responseTimeMs = "-1";
+        }
+    }
+}
