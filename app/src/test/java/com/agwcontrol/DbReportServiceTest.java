@@ -184,13 +184,13 @@ class DbReportServiceTest {
         db.saveEndpoints("TEST", "id-2", List.of(RoutingEndpoint.direct("https://t/api")));
 
         int created = service.writeReports(tmpDir);
-        // 2 Env-Dateien + 1 Cross-Env-Datei
-        assertEquals(3, created);
+        // 2 Env-Dateien + 1 Cross-Env-Datei + 1 Comparison-Datei
+        assertEquals(4, created);
 
         long csvFiles = Files.list(tmpDir)
             .filter(p -> p.getFileName().toString().endsWith(".csv"))
             .count();
-        assertEquals(3, csvFiles);
+        assertEquals(4, csvFiles);
     }
 
     @Test
@@ -308,13 +308,81 @@ class DbReportServiceTest {
 
         int created = service.writeReports(tmpDir);
 
-        // 2 Env-Dateien + 1 Cross-Env-Datei
-        assertEquals(3, created);
+        // 2 Env-Dateien + 1 Cross-Env-Datei + 1 Comparison-Datei
+        assertEquals(4, created);
 
         boolean found = Files.list(tmpDir)
             .map(p -> p.getFileName().toString())
             .anyMatch(name -> name.startsWith("report_all_environments_") && name.endsWith(".csv"));
         assertTrue(found, "report_all_environments_*.csv muss erstellt worden sein");
+    }
+
+    // ---------------------------------------------------------------
+    // API-Comparison-Report
+    // ---------------------------------------------------------------
+
+    @Test
+    void apiComparisonHeaderContainsAllEnvironments() throws SQLException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Payments API", "v1", "REST", true)));
+
+        String csv = service.buildApiComparisonCsv();
+        String headerLine = csv.lines().findFirst().orElse("");
+
+        assertTrue(headerLine.startsWith(DbReportService.API_COMPARISON_HEADER_PREFIX));
+        assertTrue(headerLine.contains("DN2020-DEV_present"),     "Header muss DN2020-DEV_present enthalten");
+        assertTrue(headerLine.contains("DN2020-PreProd_present"), "Header muss DN2020-PreProd_present enthalten");
+    }
+
+    @Test
+    void apiComparisonMarksPresenceCorrectly() throws SQLException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Payments API", "v1", "REST", true)));
+
+        String csv = service.buildApiComparisonCsv();
+        String dataLine = csv.lines().skip(1).findFirst().orElse("");
+        String[] cols = dataLine.split(";", -1);
+
+        // 4 feste Felder + 2 Env-Spalten = 6 Felder
+        assertEquals(6, cols.length);
+        assertEquals("true", cols[4], "DN2020-DEV_present muss true sein");
+        assertEquals("true", cols[5], "DN2020-PreProd_present muss true sein");
+    }
+
+    @Test
+    void apiComparisonEmptyForMissingEnvironment() throws SQLException {
+        // DN2020-PreProd muss bekannt sein, damit loadEnvironments() sie liefert
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Payments API", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-x", "Other API",    "v1", "REST", true)));
+        // Payments API nur in DEV vorhanden
+
+        String csv = service.buildApiComparisonCsv();
+        String dataLine = csv.lines()
+            .skip(1)
+            .filter(l -> l.startsWith("Payments API"))
+            .findFirst().orElse("");
+        String[] cols = dataLine.split(";", -1);
+
+        // 4 feste Felder + 2 Env-Spalten = 6 Felder
+        assertEquals(6, cols.length, "Zeile muss 6 Felder haben (4 + 2 Envs)");
+        assertEquals("true", cols[4], "DN2020-DEV_present muss true sein");
+        assertEquals("",     cols[5], "DN2020-PreProd_present muss leer sein");
+    }
+
+    @Test
+    void writeReportsCreatesApiComparisonFile(@TempDir Path tmpDir) throws SQLException, IOException {
+        db.saveApis("DN2020-DEV",     List.of(new ApiInfo("id-1", "Api", "v1", "REST", true)));
+        db.saveApis("DN2020-PreProd", List.of(new ApiInfo("id-2", "Api", "v1", "REST", true)));
+        db.saveEndpoints("DN2020-DEV",     "id-1", List.of(RoutingEndpoint.direct("https://dev/api")));
+        db.saveEndpoints("DN2020-PreProd", "id-2", List.of(RoutingEndpoint.direct("https://preprod/api")));
+
+        int created = service.writeReports(tmpDir);
+        assertEquals(4, created);
+
+        boolean found = Files.list(tmpDir)
+            .map(p -> p.getFileName().toString())
+            .anyMatch(name -> name.startsWith("report_api_comparison_") && name.endsWith(".csv"));
+        assertTrue(found, "report_api_comparison_*.csv muss erstellt worden sein");
     }
 
     // ---------------------------------------------------------------
