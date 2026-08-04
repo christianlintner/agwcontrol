@@ -1,27 +1,24 @@
 interface api
 
-service tcpCheck (
+service checkPing (
     input {
         String host;
-        String port;
         String timeoutMs;
     }
     output {
         String host;
-        String port;
-        String open;
+        String reachable;
         String responseTimeMs;
     }
 )
 properties {
-    comment: "Tests TCP connectivity to the given host and port via Socket and returns open status and response time.";
+    comment: "Pings the given host using InetAddress.isReachable() and returns reachability and response time.";
 }
 {
     INVOKE pub.flow:debugLog {
         input {
             mapSource {
                 String host;
-                String port;
             }
             mapTarget {
                 String message;
@@ -29,50 +26,44 @@ properties {
                 String level;
             }
             copy host -> message;
-            set function = "tcpCheck";
+            set function = "ping";
             set level = "Info";
         }
     }
     TRY {
-        INVOKE OEBB_Infra_Pro_AGWCheck.utils:tcpCheck {
+        INVOKE OEBB_Infra_Pro_AGWCheck.utils:ping {
             input {
                 mapSource {
                     String host;
-                    String port;
                     String timeoutMs;
                 }
                 mapTarget {
                     String host;
-                    String port;
                     String timeoutMs;
                 }
                 copy host -> host;
-                copy port -> port;
                 copy timeoutMs -> timeoutMs;
             }
             output {
                 mapSource {
                     String host;
-                    String port;
-                    String open;
+                    String reachable;
                     String responseTimeMs;
                 }
                 mapTarget {
                     String host;
-                    String port;
-                    String open;
+                    String reachable;
                     String responseTimeMs;
                 }
                 copy host -> host;
-                copy port -> port;
-                copy open -> open;
+                copy reachable -> reachable;
                 copy responseTimeMs -> responseTimeMs;
             }
         }
         INVOKE pub.flow:debugLog {
             input {
                 mapSource {
-                    String open;
+                    String reachable;
                     String responseTimeMs;
                 }
                 mapTarget {
@@ -80,8 +71,8 @@ properties {
                     String function;
                     String level;
                 }
-                copy open -> message;
-                set function = "tcpCheck";
+                copy reachable -> message;
+                set function = "ping";
                 set level = "Info";
             }
         }
@@ -94,17 +85,17 @@ properties {
                     String function;
                     String level;
                 }
-                set message = "TCP check failed with exception";
-                set function = "tcpCheck";
+                set message = "Ping failed with exception";
+                set function = "ping";
                 set level = "Error";
             }
         }
         MAP {
             mapTarget {
-                String open;
+                String reachable;
                 String responseTimeMs;
             }
-            set open = "false";
+            set reachable = "false";
             set responseTimeMs = "-1";
         }
     }

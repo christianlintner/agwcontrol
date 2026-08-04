@@ -1,6 +1,6 @@
 interface api
 
-service httpGet (
+service checkHttp (
     input {
         String url;
         String connectTimeoutMs;

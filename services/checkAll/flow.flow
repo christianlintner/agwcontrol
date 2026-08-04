@@ -1,6 +1,6 @@
 interface api
 
-service fullCheck (
+service checkAll (
     input {
         String url;
     }
@@ -33,7 +33,7 @@ properties {
                 String level;
             }
             copy url -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
@@ -72,7 +72,7 @@ properties {
                 String level;
             }
             copy parsedHost -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
@@ -124,11 +124,11 @@ properties {
                 String level;
             }
             copy resolvedIp -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
-    INVOKE OEBB_Infra_Pro_AGWCheck.api:ping {
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:checkPing {
         input {
             mapSource {
                 String parsedHost;
@@ -165,11 +165,11 @@ properties {
                 String level;
             }
             copy pingReachable -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
-    INVOKE OEBB_Infra_Pro_AGWCheck.api:tcpCheck {
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:checkTcp {
         input {
             mapSource {
                 String parsedHost;
@@ -209,11 +209,11 @@ properties {
                 String level;
             }
             copy tcpOpen -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
-    INVOKE OEBB_Infra_Pro_AGWCheck.api:httpGet {
+    INVOKE OEBB_Infra_Pro_AGWCheck.api:checkHttp {
         input {
             mapSource {
                 String url;
@@ -259,7 +259,7 @@ properties {
                 String level;
             }
             copy httpStatus -> message;
-            set function = "fullCheck";
+            set function = "checkAll";
             set level = "Info";
         }
     }
