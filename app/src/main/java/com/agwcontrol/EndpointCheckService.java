@@ -46,7 +46,7 @@ public class EndpointCheckService {
         String host;
         int port;
         try {
-            URL parsed = new URL(urlStr);
+            URL parsed = new URI(urlStr).toURL();
             host = parsed.getHost();
             port = parsed.getPort();
             if (port == -1) {
