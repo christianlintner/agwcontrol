@@ -26,7 +26,7 @@ properties {
                 String level;
             }
             copy host -> message;
-            set function = "ping";
+            set function = "checkPing";
             set level = "Info";
         }
     }
@@ -72,7 +72,7 @@ properties {
                     String level;
                 }
                 copy reachable -> message;
-                set function = "ping";
+                set function = "checkPing";
                 set level = "Info";
             }
         }
@@ -86,7 +86,7 @@ properties {
                     String level;
                 }
                 set message = "Ping failed with exception";
-                set function = "ping";
+                set function = "checkPing";
                 set level = "Error";
             }
         }

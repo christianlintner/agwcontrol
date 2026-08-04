@@ -29,7 +29,7 @@ properties {
                 String level;
             }
             copy host -> message;
-            set function = "tcpCheck";
+            set function = "checkTcp";
             set level = "Info";
         }
     }
@@ -81,7 +81,7 @@ properties {
                     String level;
                 }
                 copy open -> message;
-                set function = "tcpCheck";
+                set function = "checkTcp";
                 set level = "Info";
             }
         }
@@ -95,7 +95,7 @@ properties {
                     String level;
                 }
                 set message = "TCP check failed with exception";
-                set function = "tcpCheck";
+                set function = "checkTcp";
                 set level = "Error";
             }
         }

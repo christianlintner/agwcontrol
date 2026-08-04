@@ -29,7 +29,7 @@ properties {
                 String level;
             }
             copy url -> message;
-            set function = "httpGet";
+            set function = "checkHttp";
             set level = "Info";
         }
     }
@@ -120,7 +120,7 @@ properties {
                     String level;
                 }
                 copy httpStatus -> message;
-                set function = "httpGet";
+                set function = "checkHttp";
                 set level = "Info";
             }
         }
@@ -134,7 +134,7 @@ properties {
                     String level;
                 }
                 set message = "HTTP GET failed with exception";
-                set function = "httpGet";
+                set function = "checkHttp";
                 set level = "Error";
             }
         }
