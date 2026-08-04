@@ -1,0 +1,150 @@
+interface api
+
+service httpGet (
+    input {
+        String url;
+        String connectTimeoutMs;
+        String readTimeoutMs;
+        String skipSslVerification;
+    }
+    output {
+        String url;
+        String httpStatus;
+        String reachable;
+        String errorMsg;
+    }
+)
+properties {
+    comment: "Performs an HTTP(S) GET to the given URL and returns the HTTP status code. SSL certificate validation can be disabled for internal endpoints. Compatible with wm10.11 and wm10.15.";
+}
+{
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String url;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy url -> message;
+            set function = "httpGet";
+            set level = "Info";
+        }
+    }
+    MAP {
+        mapTarget {
+            String effectiveConnectTimeout;
+            String effectiveReadTimeout;
+        }
+        set effectiveConnectTimeout = "10000";
+        set effectiveReadTimeout = "15000";
+    }
+    IF (%connectTimeoutMs% != "") {
+        MAP {
+            mapSource {
+                String connectTimeoutMs;
+            }
+            mapTarget {
+                String effectiveConnectTimeout;
+            }
+            copy connectTimeoutMs -> effectiveConnectTimeout;
+        }
+    }
+    IF (%readTimeoutMs% != "") {
+        MAP {
+            mapSource {
+                String readTimeoutMs;
+            }
+            mapTarget {
+                String effectiveReadTimeout;
+            }
+            copy readTimeoutMs -> effectiveReadTimeout;
+        }
+    }
+    MAP {
+        mapTarget {
+            String errorMsg;
+            String httpStatus;
+            String reachable;
+        }
+        set errorMsg = "";
+        set httpStatus = "0";
+        set reachable = "false";
+    }
+    TRY {
+        INVOKE pub.client:http {
+            input {
+                mapSource {
+                    String url;
+                    String effectiveConnectTimeout;
+                    String effectiveReadTimeout;
+                    String skipSslVerification;
+                }
+                mapTarget {
+                    String url;
+                    String method;
+                    String connectTimeout;
+                    String timeout;
+                    String hostNameVerification;
+                }
+                copy url -> url;
+                set method = "get";
+                copy effectiveConnectTimeout -> connectTimeout;
+                copy effectiveReadTimeout -> timeout;
+                copy skipSslVerification -> hostNameVerification;
+            }
+        }
+        MAP {
+            mapSource {
+                record header {
+                    String status;
+                };
+            }
+            mapTarget {
+                String httpStatus;
+                String reachable;
+            }
+            copy header/status -> httpStatus;
+            set reachable = "true";
+        }
+        INVOKE pub.flow:debugLog {
+            input {
+                mapSource {
+                    String httpStatus;
+                }
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                copy httpStatus -> message;
+                set function = "httpGet";
+                set level = "Info";
+            }
+        }
+    }
+    CATCH {
+        INVOKE pub.flow:debugLog {
+            input {
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                set message = "HTTP GET failed with exception";
+                set function = "httpGet";
+                set level = "Error";
+            }
+        }
+        MAP {
+            mapTarget {
+                String errorMsg;
+                String reachable;
+            }
+            set errorMsg = "HTTP request failed";
+            set reachable = "false";
+        }
+    }
+}
