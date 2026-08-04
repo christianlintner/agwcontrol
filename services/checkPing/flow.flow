@@ -3,7 +3,7 @@ interface api
 service checkPing (
     input {
         String host;
-        String timeoutMs;
+        String timeout;
     }
     output {
         String host;
@@ -35,14 +35,14 @@ properties {
             input {
                 mapSource {
                     String host;
-                    String timeoutMs;
+                    String timeout;
                 }
                 mapTarget {
                     String host;
-                    String timeoutMs;
+                    String timeout;
                 }
                 copy host -> host;
-                copy timeoutMs -> timeoutMs;
+                copy timeout -> timeout;
             }
             output {
                 mapSource {

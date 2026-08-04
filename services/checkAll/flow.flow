@@ -136,10 +136,10 @@ properties {
             }
             mapTarget {
                 String host;
-                String timeoutMs;
+                String timeout;
             }
             copy parsedHost -> host;
-            copy pingTimeoutMs -> timeoutMs;
+            copy pingTimeoutMs -> timeout;
         }
         output {
             mapSource {
@@ -179,11 +179,11 @@ properties {
             mapTarget {
                 String host;
                 String port;
-                String timeoutMs;
+                String timeout;
             }
             copy parsedHost -> host;
             copy parsedPort -> port;
-            copy tcpTimeoutMs -> timeoutMs;
+            copy tcpTimeoutMs -> timeout;
         }
         output {
             mapSource {
@@ -223,14 +223,14 @@ properties {
             }
             mapTarget {
                 String url;
-                String connectTimeoutMs;
-                String readTimeoutMs;
-                String skipSslVerification;
+                String conn_timeout;
+                String read_timeout;
+                String insecure;
             }
             copy url -> url;
-            copy httpConnectTimeoutMs -> connectTimeoutMs;
-            copy httpReadTimeoutMs -> readTimeoutMs;
-            copy httpSkipSsl -> skipSslVerification;
+            copy httpConnectTimeoutMs -> conn_timeout;
+            copy httpReadTimeoutMs -> read_timeout;
+            copy httpSkipSsl -> insecure;
         }
         output {
             mapSource {

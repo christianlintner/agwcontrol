@@ -3,9 +3,9 @@ interface api
 service checkHttp (
     input {
         String url;
-        String connectTimeoutMs;
-        String readTimeoutMs;
-        String skipSslVerification;
+        String conn_timeout;
+        String read_timeout;
+        String insecure;
     }
     output {
         String url;
@@ -41,26 +41,26 @@ properties {
         set effectiveConnectTimeout = "10000";
         set effectiveReadTimeout = "15000";
     }
-    IF (%connectTimeoutMs% != "") {
+    IF (%conn_timeout% != "") {
         MAP {
             mapSource {
-                String connectTimeoutMs;
+                String conn_timeout;
             }
             mapTarget {
                 String effectiveConnectTimeout;
             }
-            copy connectTimeoutMs -> effectiveConnectTimeout;
+            copy conn_timeout -> effectiveConnectTimeout;
         }
     }
-    IF (%readTimeoutMs% != "") {
+    IF (%read_timeout% != "") {
         MAP {
             mapSource {
-                String readTimeoutMs;
+                String read_timeout;
             }
             mapTarget {
                 String effectiveReadTimeout;
             }
-            copy readTimeoutMs -> effectiveReadTimeout;
+            copy read_timeout -> effectiveReadTimeout;
         }
     }
     MAP {
@@ -80,7 +80,7 @@ properties {
                     String url;
                     String effectiveConnectTimeout;
                     String effectiveReadTimeout;
-                    String skipSslVerification;
+                    String insecure;
                 }
                 mapTarget {
                     String url;
@@ -93,7 +93,7 @@ properties {
                 set method = "get";
                 copy effectiveConnectTimeout -> connectTimeout;
                 copy effectiveReadTimeout -> timeout;
-                copy skipSslVerification -> hostNameVerification;
+                copy insecure -> hostNameVerification;
             }
         }
         MAP {

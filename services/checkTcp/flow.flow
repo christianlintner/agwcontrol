@@ -4,7 +4,7 @@ service checkTcp (
     input {
         String host;
         String port;
-        String timeoutMs;
+        String timeout;
     }
     output {
         String host;
@@ -39,16 +39,16 @@ properties {
                 mapSource {
                     String host;
                     String port;
-                    String timeoutMs;
+                    String timeout;
                 }
                 mapTarget {
                     String host;
                     String port;
-                    String timeoutMs;
+                    String timeout;
                 }
                 copy host -> host;
                 copy port -> port;
-                copy timeoutMs -> timeoutMs;
+                copy timeout -> timeout;
             }
             output {
                 mapSource {
