@@ -471,7 +471,11 @@ public class InteractiveMenu {
                 out.println("Keine Daten in der Datenbank. Bitte zuerst APIs und Endpoints laden.");
                 return;
             }
-            new DbReportService(apiDatabase).writeReports(outputDir);
+            List<String> configuredEnvs = groups.stream()
+                .map(ServerGroup::getName)
+                .filter(name -> !"alle".equalsIgnoreCase(name))
+                .collect(java.util.stream.Collectors.toList());
+            new DbReportService(apiDatabase).writeReports(outputDir, configuredEnvs);
         } catch (java.sql.SQLException | java.io.IOException e) {
             out.println("Fehler beim Report: " + e.getMessage());
         }

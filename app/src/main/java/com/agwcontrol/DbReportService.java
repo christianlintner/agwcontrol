@@ -8,6 +8,7 @@ import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.*;
 
 /**
  * Erstellt pro Umgebung eine CSV-Datei aus den in der DB gespeicherten
@@ -23,6 +24,9 @@ public class DbReportService {
         "server_host;ping_ok;ping_ms;tcp_ok;tcp_ms;http_status;reachable;error_msg;checked_at";
 
     static final String CROSS_ENV_HEADER_PREFIX =
+        "api_name;api_version;api_type;api_active";
+
+    static final String API_COMPARISON_HEADER_PREFIX =
         "api_name;api_version;api_type;api_active";
 
     private static final DateTimeFormatter TIMESTAMP_FMT =
@@ -41,6 +45,18 @@ public class DbReportService {
      * @return Anzahl der erstellten Dateien
      */
     public int writeReports(Path outputDir) throws SQLException, IOException {
+        return writeReports(outputDir, List.of());
+    }
+
+    /**
+     * Wie {@link #writeReports(Path)}, jedoch werden zusätzlich alle in
+     * {@code configuredEnvs} enthaltenen Umgebungsnamen im API-Comparison-Report
+     * als Spalten aufgenommen – auch wenn für sie noch keine DB-Daten vorhanden sind.
+     *
+     * @param configuredEnvs alle konfigurierten Umgebungsnamen (z. B. aus ServerGroup)
+     * @return Anzahl der erstellten Dateien
+     */
+    public int writeReports(Path outputDir, List<String> configuredEnvs) throws SQLException, IOException {
         String ts = LocalDateTime.now().format(TIMESTAMP_FMT);
         List<String> envs = db.loadEnvironments();
         int count = 0;
@@ -59,6 +75,13 @@ public class DbReportService {
         Files.writeString(crossEnvFile, crossEnvCsv, StandardCharsets.UTF_8);
         long crossEnvLines = crossEnvCsv.lines().count() - 1;
         System.out.println("Erstellt: " + crossEnvFilename + " (" + crossEnvLines + " Zeilen)");
+        count++;
+        String comparisonCsv = buildApiComparisonCsv(configuredEnvs);
+        String comparisonFilename = "report_api_comparison_" + ts + ".csv";
+        Path comparisonFile = outputDir.resolve(comparisonFilename);
+        Files.writeString(comparisonFile, comparisonCsv, StandardCharsets.UTF_8);
+        long comparisonLines = comparisonCsv.lines().count() - 1;
+        System.out.println("Erstellt: " + comparisonFilename + " (" + comparisonLines + " Zeilen)");
         count++;
         return count;
     }
@@ -270,6 +293,81 @@ public class DbReportService {
                         row.append(";").append(csvField(e.check.checkedAt));
                     }
                 }
+            }
+            row.append("\n");
+            sb.append(row);
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Erstellt den API-Vergleichs-CSV-Inhalt: eine Zeile pro eindeutigem api_name + api_version,
+     * pro Umgebung eine Bool-Spalte ({@code true} wenn vorhanden, sonst leer).
+     * Alle in der DB vorhandenen Umgebungen werden einbezogen.
+     */
+    public String buildApiComparisonCsv() throws SQLException {
+        return buildApiComparisonCsv(List.of());
+    }
+
+    /**
+     * Wie {@link #buildApiComparisonCsv()}, jedoch werden zusätzlich alle in
+     * {@code extraEnvs} enthaltenen Umgebungen als Spalten aufgenommen –
+     * auch wenn für sie noch keine DB-Daten vorhanden sind (Spalte bleibt leer).
+     */
+    public String buildApiComparisonCsv(List<String> extraEnvs) throws SQLException {
+        // Union aus DB-Envs und konfigurierten Envs, alphabetisch sortiert.
+        // "alle" ist kein echter Env-Name (wird beim Import für "Alle Umgebungen" verwendet)
+        // und wird bewusst ausgeschlossen.
+        Set<String> envSet = new LinkedHashSet<>(db.loadEnvironments());
+        envSet.addAll(extraEnvs);
+        List<String> envs = envSet.stream()
+            .filter(e -> !"alle".equalsIgnoreCase(e))
+            .sorted()
+            .collect(Collectors.toList());
+
+        // Header aufbauen
+        StringBuilder header = new StringBuilder(API_COMPARISON_HEADER_PREFIX);
+        for (String env : envs) {
+            header.append(";").append(env).append("_present");
+        }
+
+        // Pivot: rowKey (api_name|api_version) → Set<env>
+        Map<String, ApiInfo> apiByKey = new LinkedHashMap<>();
+        Map<String, Set<String>> presenceByKey = new LinkedHashMap<>();
+
+        for (String env : envs) {
+            List<ApiInfo> apis = db.loadApis(env);
+            for (ApiInfo api : apis) {
+                String rowKey = api.getName() + "|" + api.getVersion();
+                apiByKey.putIfAbsent(rowKey, api);
+                presenceByKey.computeIfAbsent(rowKey, k -> new HashSet<>()).add(env);
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append(header).append("\n");
+
+        if (presenceByKey.isEmpty()) {
+            sb.append("(keine Daten vorhanden)\n");
+            return sb.toString();
+        }
+
+        List<String> sortedKeys = new ArrayList<>(presenceByKey.keySet());
+        sortedKeys.sort(Comparator.naturalOrder());
+
+        for (String rowKey : sortedKeys) {
+            ApiInfo api = apiByKey.get(rowKey);
+            Set<String> presentIn = presenceByKey.get(rowKey);
+
+            StringBuilder row = new StringBuilder();
+            row.append(csvField(api.getName())).append(";");
+            row.append(csvField(api.getVersion())).append(";");
+            row.append(csvField(api.getType())).append(";");
+            row.append(api.isActive());
+
+            for (String env : envs) {
+                row.append(";").append(presentIn.contains(env) ? "true" : "");
             }
             row.append("\n");
             sb.append(row);
