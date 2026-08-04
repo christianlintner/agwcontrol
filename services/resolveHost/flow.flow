@@ -1,0 +1,94 @@
+interface api
+
+service resolveHost (
+    input {
+        String url;
+    }
+    output {
+        String host;
+        String resolvedIp;
+    }
+)
+properties {
+    comment: "Resolves the hostname of the given URL to its IP address via DNS lookup.";
+}
+{
+    INVOKE pub.flow:debugLog {
+        input {
+            mapSource {
+                String url;
+            }
+            mapTarget {
+                String message;
+                String function;
+                String level;
+            }
+            copy url -> message;
+            set function = "resolveHost";
+            set level = "Info";
+        }
+    }
+    TRY {
+        INVOKE OEBB_Infra_Pro_AGWCheck.utils:resolveHost {
+            input {
+                mapSource {
+                    String url;
+                }
+                mapTarget {
+                    String url;
+                }
+                copy url -> url;
+            }
+            output {
+                mapSource {
+                    String host;
+                    String resolvedIp;
+                }
+                mapTarget {
+                    String host;
+                    String resolvedIp;
+                }
+                copy host -> host;
+                copy resolvedIp -> resolvedIp;
+            }
+        }
+        INVOKE pub.flow:debugLog {
+            input {
+                mapSource {
+                    String host;
+                    String resolvedIp;
+                }
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                copy resolvedIp -> message;
+                set function = "resolveHost";
+                set level = "Info";
+            }
+        }
+    }
+    CATCH {
+        INVOKE pub.flow:debugLog {
+            input {
+                mapTarget {
+                    String message;
+                    String function;
+                    String level;
+                }
+                set message = "DNS resolution failed";
+                set function = "resolveHost";
+                set level = "Error";
+            }
+        }
+        MAP {
+            mapTarget {
+                String host;
+                String resolvedIp;
+            }
+            set host = "";
+            set resolvedIp = "";
+        }
+    }
+}
