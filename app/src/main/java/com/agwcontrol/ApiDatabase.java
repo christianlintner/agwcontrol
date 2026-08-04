@@ -298,6 +298,27 @@ public class ApiDatabase {
     }
 
     // ---------------------------------------------------------------
+    // Reset
+    // ---------------------------------------------------------------
+
+    /**
+     * Löscht alle Daten aus den Tabellen {@code endpoint_check_results},
+     * {@code endpoints} und {@code apis} in einer Transaktion.
+     */
+    public void resetAll() throws SQLException {
+        Connection conn = connect();
+        conn.setAutoCommit(false);
+        try (Statement stmt = conn.createStatement()) {
+            stmt.executeUpdate("DELETE FROM endpoint_check_results");
+            stmt.executeUpdate("DELETE FROM endpoints");
+            stmt.executeUpdate("DELETE FROM apis");
+            conn.commit();
+        } finally {
+            conn.setAutoCommit(true);
+        }
+    }
+
+    // ---------------------------------------------------------------
     // Hilfsmethoden
     // ---------------------------------------------------------------
 

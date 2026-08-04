@@ -74,9 +74,14 @@ public class InteractiveMenu {
                 continue;
             }
 
+            if ("x".equalsIgnoreCase(input)) {
+                runDatabaseReset();
+                continue;
+            }
+
             int idx = parseIndex(input);
             if (idx < 1 || idx > groups.size()) {
-                out.println("Ungültige Eingabe. Bitte eine Zahl zwischen 1 und " + groups.size() + ", [a], [r] oder [q] eingeben.");
+                out.println("Ungültige Eingabe. Bitte eine Zahl zwischen 1 und " + groups.size() + ", [a], [r], [x] oder [q] eingeben.");
                 continue;
             }
 
@@ -101,6 +106,7 @@ public class InteractiveMenu {
         out.println("  [a]  Alle Umgebungen");
         out.println("  ─────────────────────────────────────");
         out.println("  [r]  Report erstellen (CSV)");
+        out.println("  [x]  Datenbank zurücksetzen");
         out.println("  [q]  Beenden");
         out.print("Auswahl: ");
     }
@@ -440,6 +446,22 @@ public class InteractiveMenu {
             return;
         }
         out.println(endpointCheckFormatter.format(server.getHost(), results));
+    }
+
+    private void runDatabaseReset() {
+        out.println();
+        out.print("Datenbank wirklich zurücksetzen? [j/N]: ");
+        String confirm = scanner.nextLine().trim();
+        if ("j".equalsIgnoreCase(confirm)) {
+            try {
+                apiDatabase.resetAll();
+                out.println("Datenbank wurde erfolgreich zurückgesetzt.");
+            } catch (java.sql.SQLException e) {
+                out.println("Fehler beim Zurücksetzen: " + e.getMessage());
+            }
+        } else {
+            out.println("Abgebrochen.");
+        }
     }
 
     private void runReport() {

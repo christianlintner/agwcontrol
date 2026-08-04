@@ -255,4 +255,30 @@ class ApiDatabaseTest {
         assertFalse(l.isReachable());
         assertEquals("Ungültige URL: no protocol: dummy.dummy", l.getErrorMsg());
     }
+
+    // ---------------------------------------------------------------
+    // resetAll
+    // ---------------------------------------------------------------
+
+    @Test
+    void resetAllClearsAllTables() throws SQLException {
+        db.saveApis("PROD", List.of(new ApiInfo("id-1", "ApiA", "1.0", "REST", true)));
+        db.saveEndpoints("PROD", "id-1", List.of(RoutingEndpoint.direct("https://backend/api")));
+        EndpointCheckResult r = new EndpointCheckResult(
+            "ApiA", "1.0", null, "https://backend/api",
+            200, true, null, true, 5L, true, 3L
+        );
+        db.saveCheckResult("PROD", "id-1", "host1", r);
+
+        db.resetAll();
+
+        assertTrue(db.loadApis("PROD").isEmpty());
+        assertTrue(db.loadEndpoints("PROD", "id-1").isEmpty());
+        assertTrue(db.loadCheckResults("PROD", "id-1").isEmpty());
+    }
+
+    @Test
+    void resetAllOnEmptyDbDoesNotThrow() {
+        assertDoesNotThrow(() -> db.resetAll());
+    }
 }
