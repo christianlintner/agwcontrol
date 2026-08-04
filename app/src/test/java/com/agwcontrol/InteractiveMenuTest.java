@@ -305,4 +305,24 @@ class InteractiveMenuTest {
         ByteArrayOutputStream out = runMenu(singleGroup(), "1\nz\nb\nq\n");
         assertTrue(out.toString().contains("Ungültige Eingabe"));
     }
+
+    // --- Datenbank-Reset ---
+
+    @Test
+    void mainMenuShowsDatabaseResetOption() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "q\n");
+        assertTrue(out.toString().contains("Datenbank zurücksetzen"));
+    }
+
+    @Test
+    void databaseResetWithConfirmationJa() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "x\nj\nq\n");
+        assertTrue(out.toString().contains("erfolgreich zurückgesetzt"));
+    }
+
+    @Test
+    void databaseResetWithoutConfirmation() {
+        ByteArrayOutputStream out = runMenu(singleGroup(), "x\nN\nq\n");
+        assertTrue(out.toString().contains("Abgebrochen"));
+    }
 }

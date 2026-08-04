@@ -31,7 +31,7 @@ gut testbaren Methode.
 - Datei: `app/src/main/java/com/agwcontrol/ApiDatabase.java`
 - Muster: `saveEndpoints()` verwendet dieselbe Transaktionslogik – als Vorlage verwenden
 
-**Status** `[ ] pending`
+**Status** `[x] done`
 
 ---
 
@@ -54,7 +54,7 @@ Fehler wirft.
 - Datei: `app/src/test/java/com/agwcontrol/ApiDatabaseTest.java`
 - In-Memory-DB wird via `new ApiDatabase(":memory:")` erzeugt – Muster bereits vorhanden
 
-**Status** `[ ] pending`
+**Status** `[x] done`
 
 ---
 
@@ -84,7 +84,7 @@ zurückzusetzen – mit Bestätigungsabfrage als Sicherheitsnetz.
 - Methode `runReport()` (Zeile 445) als Muster für ähnlichen Hauptmenü-Flow
 - Methode `run()` (Zeile 58): Input-Handling Muster bereits etabliert
 
-**Status** `[ ] pending`
+**Status** `[x] done`
 
 ---
 
@@ -108,4 +108,4 @@ Bestätigungslogik korrekt funktioniert.
 - Datei: `app/src/test/java/com/agwcontrol/InteractiveMenuTest.java`
 - Hilfsmethode `runMenu(groups, input)` bereits vorhanden – wiederverwenden
 
-**Status** `[ ] pending`
+**Status** `[x] done`
