@@ -6,6 +6,9 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
@@ -106,7 +109,12 @@ public class EndpointCheckService {
     }
 
     private int doRequest(String urlStr, String method) throws IOException {
-        URL url = new URL(urlStr);
+        URL url;
+        try {
+            url = new URI(urlStr).toURL();
+        } catch (final URISyntaxException | MalformedURLException | IllegalArgumentException e) {
+            throw new IllegalStateException(e);
+        }
         HttpURLConnection conn;
         if ("https".equalsIgnoreCase(url.getProtocol())) {
             conn = (HttpsURLConnection) url.openConnection();
