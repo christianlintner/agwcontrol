@@ -256,10 +256,6 @@ public class InteractiveMenu {
         final List<ApiInfo> apis;
         final boolean showListAgain;
 
-        ApiSelection(List<ApiInfo> apis) {
-            this(apis, false);
-        }
-
         ApiSelection(List<ApiInfo> apis, boolean showListAgain) {
             this.apis = apis;
             this.showListAgain = showListAgain;
