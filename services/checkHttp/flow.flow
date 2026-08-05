@@ -9,9 +9,9 @@ service checkHttp (
     }
     output {
         String url;
-        String httpStatus;
+        String http_status;
         String reachable;
-        String errorMsg;
+        String error_msg;
     }
 )
 properties {
@@ -65,12 +65,12 @@ properties {
     }
     MAP {
         mapTarget {
-            String errorMsg;
-            String httpStatus;
+            String error_msg;
+            String http_status;
             String reachable;
         }
-        set errorMsg = "";
-        set httpStatus = "0";
+        set error_msg = "";
+        set http_status = "0";
         set reachable = "false";
     }
     TRY {
@@ -103,23 +103,23 @@ properties {
                 };
             }
             mapTarget {
-                String httpStatus;
+                String http_status;
                 String reachable;
             }
-            copy header/status -> httpStatus;
+            copy header/status -> http_status;
             set reachable = "true";
         }
         INVOKE pub.flow:debugLog {
             input {
                 mapSource {
-                    String httpStatus;
+                    String http_status;
                 }
                 mapTarget {
                     String message;
                     String function;
                     String level;
                 }
-                copy httpStatus -> message;
+                copy http_status -> message;
                 set function = "checkHttp";
                 set level = "Info";
             }
@@ -140,10 +140,10 @@ properties {
         }
         MAP {
             mapTarget {
-                String errorMsg;
+                String error_msg;
                 String reachable;
             }
-            set errorMsg = "HTTP request failed";
+            set error_msg = "HTTP request failed";
             set reachable = "false";
         }
     }

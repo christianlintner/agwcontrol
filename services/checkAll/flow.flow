@@ -7,15 +7,15 @@ service checkAll (
     output {
         String url;
         String host;
-        String resolvedIp;
-        String pingReachable;
-        String pingResponseTimeMs;
-        String tcpPort;
-        String tcpOpen;
-        String tcpResponseTimeMs;
-        String httpStatus;
-        String httpReachable;
-        String httpErrorMsg;
+        String resolved_ip;
+        String ping_reachable;
+        String ping_response_time;
+        String tcp_port;
+        String tcp_open;
+        String tcp_response_time;
+        String http_status;
+        String http_reachable;
+        String http_error_msg;
     }
 )
 properties {
@@ -103,27 +103,27 @@ properties {
         output {
             mapSource {
                 String host;
-                String resolvedIp;
+                String resolved_ip;
             }
             mapTarget {
                 String resolvedHost;
-                String resolvedIp;
+                String resolved_ip;
             }
             copy host -> resolvedHost;
-            copy resolvedIp -> resolvedIp;
+            copy resolved_ip -> resolved_ip;
         }
     }
     INVOKE pub.flow:debugLog {
         input {
             mapSource {
-                String resolvedIp;
+                String resolved_ip;
             }
             mapTarget {
                 String message;
                 String function;
                 String level;
             }
-            copy resolvedIp -> message;
+            copy resolved_ip -> message;
             set function = "checkAll";
             set level = "Info";
         }
@@ -144,27 +144,27 @@ properties {
         output {
             mapSource {
                 String reachable;
-                String responseTimeMs;
+                String response_time;
             }
             mapTarget {
-                String pingReachable;
-                String pingResponseTimeMs;
+                String ping_reachable;
+                String ping_response_time;
             }
-            copy reachable -> pingReachable;
-            copy responseTimeMs -> pingResponseTimeMs;
+            copy reachable -> ping_reachable;
+            copy response_time -> ping_response_time;
         }
     }
     INVOKE pub.flow:debugLog {
         input {
             mapSource {
-                String pingReachable;
+                String ping_reachable;
             }
             mapTarget {
                 String message;
                 String function;
                 String level;
             }
-            copy pingReachable -> message;
+            copy ping_reachable -> message;
             set function = "checkAll";
             set level = "Info";
         }
@@ -188,27 +188,27 @@ properties {
         output {
             mapSource {
                 String open;
-                String responseTimeMs;
+                String response_time;
             }
             mapTarget {
-                String tcpOpen;
-                String tcpResponseTimeMs;
+                String tcp_open;
+                String tcp_response_time;
             }
-            copy open -> tcpOpen;
-            copy responseTimeMs -> tcpResponseTimeMs;
+            copy open -> tcp_open;
+            copy response_time -> tcp_response_time;
         }
     }
     INVOKE pub.flow:debugLog {
         input {
             mapSource {
-                String tcpOpen;
+                String tcp_open;
             }
             mapTarget {
                 String message;
                 String function;
                 String level;
             }
-            copy tcpOpen -> message;
+            copy tcp_open -> message;
             set function = "checkAll";
             set level = "Info";
         }
@@ -234,31 +234,31 @@ properties {
         }
         output {
             mapSource {
-                String httpStatus;
+                String http_status;
                 String reachable;
-                String errorMsg;
+                String error_msg;
             }
             mapTarget {
-                String httpStatus;
-                String httpReachable;
-                String httpErrorMsg;
+                String http_status;
+                String http_reachable;
+                String http_error_msg;
             }
-            copy httpStatus -> httpStatus;
-            copy reachable -> httpReachable;
-            copy errorMsg -> httpErrorMsg;
+            copy http_status -> http_status;
+            copy reachable -> http_reachable;
+            copy error_msg -> http_error_msg;
         }
     }
     INVOKE pub.flow:debugLog {
         input {
             mapSource {
-                String httpStatus;
+                String http_status;
             }
             mapTarget {
                 String message;
                 String function;
                 String level;
             }
-            copy httpStatus -> message;
+            copy http_status -> message;
             set function = "checkAll";
             set level = "Info";
         }
@@ -270,9 +270,9 @@ properties {
         }
         mapTarget {
             String host;
-            String tcpPort;
+            String tcp_port;
         }
         copy resolvedHost -> host;
-        copy parsedPort -> tcpPort;
+        copy parsedPort -> tcp_port;
     }
 }

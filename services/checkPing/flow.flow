@@ -8,7 +8,7 @@ service checkPing (
     output {
         String host;
         String reachable;
-        String responseTimeMs;
+        String response_time;
     }
 )
 properties {
@@ -48,23 +48,23 @@ properties {
                 mapSource {
                     String host;
                     String reachable;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 mapTarget {
                     String host;
                     String reachable;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 copy host -> host;
                 copy reachable -> reachable;
-                copy responseTimeMs -> responseTimeMs;
+                copy response_time -> response_time;
             }
         }
         INVOKE pub.flow:debugLog {
             input {
                 mapSource {
                     String reachable;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 mapTarget {
                     String message;
@@ -93,10 +93,10 @@ properties {
         MAP {
             mapTarget {
                 String reachable;
-                String responseTimeMs;
+                String response_time;
             }
             set reachable = "false";
-            set responseTimeMs = "-1";
+            set response_time = "-1";
         }
     }
 }

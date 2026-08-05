@@ -10,7 +10,7 @@ service checkTcp (
         String host;
         String port;
         String open;
-        String responseTimeMs;
+        String response_time;
     }
 )
 properties {
@@ -55,25 +55,25 @@ properties {
                     String host;
                     String port;
                     String open;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 mapTarget {
                     String host;
                     String port;
                     String open;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 copy host -> host;
                 copy port -> port;
                 copy open -> open;
-                copy responseTimeMs -> responseTimeMs;
+                copy response_time -> response_time;
             }
         }
         INVOKE pub.flow:debugLog {
             input {
                 mapSource {
                     String open;
-                    String responseTimeMs;
+                    String response_time;
                 }
                 mapTarget {
                     String message;
@@ -102,10 +102,10 @@ properties {
         MAP {
             mapTarget {
                 String open;
-                String responseTimeMs;
+                String response_time;
             }
             set open = "false";
-            set responseTimeMs = "-1";
+            set response_time = "-1";
         }
     }
 }

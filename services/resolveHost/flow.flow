@@ -6,7 +6,7 @@ service resolveHost (
     }
     output {
         String host;
-        String resolvedIp;
+        String resolved_ip;
     }
 )
 properties {
@@ -42,28 +42,28 @@ properties {
             output {
                 mapSource {
                     String host;
-                    String resolvedIp;
+                    String resolved_ip;
                 }
                 mapTarget {
                     String host;
-                    String resolvedIp;
+                    String resolved_ip;
                 }
                 copy host -> host;
-                copy resolvedIp -> resolvedIp;
+                copy resolved_ip -> resolved_ip;
             }
         }
         INVOKE pub.flow:debugLog {
             input {
                 mapSource {
                     String host;
-                    String resolvedIp;
+                    String resolved_ip;
                 }
                 mapTarget {
                     String message;
                     String function;
                     String level;
                 }
-                copy resolvedIp -> message;
+                copy resolved_ip -> message;
                 set function = "resolveHost";
                 set level = "Info";
             }
@@ -85,10 +85,10 @@ properties {
         MAP {
             mapTarget {
                 String host;
-                String resolvedIp;
+                String resolved_ip;
             }
             set host = "";
-            set resolvedIp = "";
+            set resolved_ip = "";
         }
     }
 }
