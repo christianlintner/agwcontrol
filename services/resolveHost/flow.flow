@@ -10,7 +10,7 @@ service resolveHost (
     }
 )
 properties {
-    comment: "Resolves the hostname of the given URL to its IP address via DNS lookup.";
+    comment: "Extracts the hostname from a fully qualified URL and resolves it to an IP address using Java DNS (InetAddress.getByName). Accepts any URL with scheme and path (e.g. https://host/path). Returns the bare hostname and its resolved IPv4/IPv6 address. Returns empty strings for both outputs if the URL is invalid or DNS resolution fails.";
 }
 {
     INVOKE pub.flow:debugLog {

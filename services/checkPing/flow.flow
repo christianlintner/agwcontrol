@@ -12,7 +12,7 @@ service checkPing (
     }
 )
 properties {
-    comment: "Pings the given host using InetAddress.isReachable() and returns reachability and response time.";
+    comment: "Tests ICMP reachability of a hostname or IP address using Java's InetAddress.isReachable(). The optional timeout parameter controls how long the probe waits before giving up (default: 2000 ms). Returns reachable=true and the round-trip time in milliseconds on success, or reachable=false and response_time=-1 if the host does not respond. Note: ICMP requires raw socket privileges — on Linux/Docker the container must have the NET_RAW capability, otherwise isReachable() silently falls back to TCP port 7 which is almost always closed.";
 }
 {
     INVOKE pub.flow:debugLog {

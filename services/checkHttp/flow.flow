@@ -15,7 +15,7 @@ service checkHttp (
     }
 )
 properties {
-    comment: "Performs an HTTP(S) GET to the given URL and returns the HTTP status code. SSL certificate validation can be disabled for internal endpoints. Compatible with wm10.11 and wm10.15.";
+    comment: "Issues an HTTP HEAD request to the given URL and returns the HTTP status code. Falls back to GET automatically if the server returns 405 Method Not Allowed. Connect and read timeouts default to 10000 ms and 15000 ms respectively and can be overridden via conn_timeout and read_timeout. Set insecure=true to disable SSL certificate and hostname verification for internal endpoints with self-signed certificates (uses a trust-all TLS context). Returns reachable=true for any HTTP response (status > 0), or reachable=false with error_msg populated if the connection fails. Compatible with webMethods IS 10.11 and 10.15 (Java 8).";
 }
 {
     INVOKE pub.flow:debugLog {

@@ -14,7 +14,7 @@ service checkTcp (
     }
 )
 properties {
-    comment: "Tests TCP connectivity to the given host and port via Socket and returns open status and response time.";
+    comment: "Tests TCP port connectivity by attempting a socket connection to the given host and port using Java's Socket.connect() with InetSocketAddress. The optional timeout parameter controls the connect timeout (default: 2000 ms). Returns open=true and the connection time in milliseconds on success, or open=false and response_time=-1 if the connection is refused or times out. Default port is 443 if the port parameter is omitted or unparseable.";
 }
 {
     INVOKE pub.flow:debugLog {
