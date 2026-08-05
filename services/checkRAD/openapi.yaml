@@ -1,0 +1,468 @@
+openapi: "3.0.3"
+
+info:
+  title: AGW Control – Endpoint Check API
+  description: >
+    REST API for infrastructure endpoint diagnostics.
+    Provides DNS resolution, ICMP ping, TCP connectivity, and HTTP reachability
+    checks against backend endpoints managed by the API Gateway.
+  version: "1.0.0"
+  contact:
+    name: ÖBB Infra Pro – AGW Control
+  license:
+    name: Internal use only
+
+servers:
+  - url: '{scheme}://{host}:{port}/rest/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD'
+    description: webMethods Integration Server
+    variables:
+      scheme:
+        default: http
+        description: URL scheme of the Integration Server instance
+      host:
+        default: localhost
+        description: Hostname of the Integration Server instance
+      port:
+        default: "5555"
+        description: HTTPS port of the Integration Server instance
+
+security:
+  - basicAuth: []
+
+tags:
+  - name: dns
+    description: DNS hostname resolution
+  - name: ping
+    description: ICMP reachability check
+  - name: tcp
+    description: TCP port connectivity check
+  - name: http
+    description: HTTP(S) GET reachability check
+  - name: combined
+    description: Full combined endpoint check
+
+paths:
+
+  /resolve:
+    get:
+      tags: [dns]
+      operationId: resolveHost
+      summary: Resolve hostname of a URL to its IP address
+      description: >
+        Extracts the hostname from the given URL and resolves it via DNS
+        using `InetAddress.getByName()`. Returns the hostname and the
+        resolved IPv4/IPv6 address.
+      parameters:
+        - $ref: '#/components/parameters/urlParam'
+      responses:
+        "200":
+          description: DNS resolution result (success or failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResolveResponse'
+              examples:
+                success:
+                  summary: Successful resolution
+                  value:
+                    host: vm10477.org.oebb.at
+                    resolved_ip: "10.66.24.18"
+                failure:
+                  summary: DNS resolution failed
+                  value:
+                    host: ""
+                    resolved_ip: ""
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /ping:
+    get:
+      tags: [ping]
+      operationId: checkPing
+      summary: Ping a host via InetAddress.isReachable()
+      description: >
+        Tests ICMP reachability of the given hostname using Java's
+        `InetAddress.isReachable()`. Returns whether the host is reachable
+        and the round-trip time in milliseconds.
+      parameters:
+        - $ref: '#/components/parameters/hostParam'
+        - $ref: '#/components/parameters/timeoutParam'
+      responses:
+        "200":
+          description: Ping result (success or unreachable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PingResponse'
+              examples:
+                reachable:
+                  summary: Host is reachable
+                  value:
+                    host: vm10477.org.oebb.at
+                    reachable: "true"
+                    response_time: "12"
+                unreachable:
+                  summary: Host is not reachable
+                  value:
+                    host: vm10477.org.oebb.at
+                    reachable: "false"
+                    response_time: "-1"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /tcp:
+    get:
+      tags: [tcp]
+      operationId: checkTcp
+      summary: Test TCP connectivity to a host and port
+      description: >
+        Opens a TCP socket connection to the given host and port using
+        Java's `Socket.connect()` with the specified timeout. Returns
+        whether the port is open and the connection time in milliseconds.
+      parameters:
+        - $ref: '#/components/parameters/hostParam'
+        - name: port
+          in: query
+          required: true
+          description: TCP port number to test
+          schema:
+            type: string
+            example: "443"
+        - $ref: '#/components/parameters/timeoutParam'
+      responses:
+        "200":
+          description: TCP check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TcpResponse'
+              examples:
+                open:
+                  summary: Port is open
+                  value:
+                    host: vm10477.org.oebb.at
+                    port: "443"
+                    open: "true"
+                    response_time: "8"
+                closed:
+                  summary: Port is closed or unreachable
+                  value:
+                    host: vm10477.org.oebb.at
+                    port: "443"
+                    open: "false"
+                    response_time: "-1"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /http:
+    get:
+      tags: [http]
+      operationId: checkHttp
+      summary: Perform an HTTP(S) GET and return the status code
+      description: >
+        Issues an HTTP(S) GET request to the given URL using `pub.client:http`.
+        Returns the HTTP status code and reachability flag. SSL certificate
+        validation can be disabled for internal endpoints with self-signed
+        certificates by setting `insecure=true`.
+        Compatible with wm10.11 and wm10.15.
+      parameters:
+        - $ref: '#/components/parameters/urlParam'
+        - name: conn_timeout
+          in: query
+          required: false
+          description: >
+            TCP connect timeout in milliseconds. Defaults to 10000 ms if
+            not supplied.
+          schema:
+            type: string
+            example: "10000"
+        - name: read_timeout
+          in: query
+          required: false
+          description: >
+            HTTP read timeout in milliseconds. Defaults to 15000 ms if
+            not supplied.
+          schema:
+            type: string
+            example: "15000"
+        - name: insecure
+          in: query
+          required: false
+          description: >
+            Set to `true` to disable hostname verification for HTTPS
+            endpoints with self-signed certificates (trust-all). Defaults
+            to `false` (verification enabled) if not supplied.
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+            example: "false"
+      responses:
+        "200":
+          description: HTTP check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HttpResponse'
+              examples:
+                reachable:
+                  summary: Endpoint responded
+                  value:
+                    url: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+                    http_status: "401"
+                    reachable: "true"
+                    error_msg: ""
+                unreachable:
+                  summary: Connection failed
+                  value:
+                    url: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+                    http_status: "0"
+                    reachable: "false"
+                    error_msg: "HTTP request failed"
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+  /check:
+    get:
+      tags: [combined]
+      operationId: checkAll
+      summary: Full combined endpoint check
+      description: >
+        Runs all four checks in a single call: DNS resolution, ICMP ping,
+        TCP port check, and HTTP(S) GET. The hostname and port are extracted
+        from the supplied URL automatically. Timeout values use the same
+        defaults as the individual endpoints.
+      parameters:
+        - $ref: '#/components/parameters/urlParam'
+      responses:
+        "200":
+          description: Combined check result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckAllResponse'
+              examples:
+                fullResult:
+                  summary: Full check result for reference endpoint
+                  value:
+                    url: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+                    host: vm10477.org.oebb.at
+                    resolved_ip: "10.66.24.18"
+                    ping_reachable: "true"
+                    ping_response_time: "12"
+                    tcp_port: "443"
+                    tcp_open: "true"
+                    tcp_response_time: "8"
+                    http_status: "401"
+                    http_reachable: "true"
+                    http_error_msg: ""
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+
+components:
+
+  securitySchemes:
+    basicAuth:
+      type: http
+      scheme: basic
+      description: >
+        HTTP Basic Authentication. The user must be a member of the
+        **Administrators** group on Integration Server.
+
+  parameters:
+    urlParam:
+      name: url
+      in: query
+      required: true
+      description: >
+        Fully qualified URL of the backend endpoint, including protocol,
+        hostname, and path. Example: `https://vm10477.org.oebb.at/MARS_PRSAP_Service`
+      schema:
+        type: string
+        format: uri
+        example: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+
+    hostParam:
+      name: host
+      in: query
+      required: true
+      description: Hostname or IP address of the target server
+      schema:
+        type: string
+        example: vm10477.org.oebb.at
+
+    timeoutParam:
+      name: timeout
+      in: query
+      required: false
+      description: >
+        Operation timeout in milliseconds. Defaults to 2000 ms if not supplied.
+      schema:
+        type: string
+        example: "2000"
+
+  schemas:
+
+    ResolveResponse:
+      type: object
+      description: Result of DNS hostname resolution
+      properties:
+        host:
+          type: string
+          description: Hostname extracted from the URL
+          example: vm10477.org.oebb.at
+        resolved_ip:
+          type: string
+          description: >
+            Resolved IP address, or empty string if resolution failed
+          example: "10.66.24.18"
+      required: [host, resolved_ip]
+
+    PingResponse:
+      type: object
+      description: Result of an ICMP ping check
+      properties:
+        host:
+          type: string
+          description: Hostname that was pinged
+          example: vm10477.org.oebb.at
+        reachable:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the host responded to the ping
+          example: "true"
+        response_time:
+          type: string
+          description: Round-trip time in milliseconds, or -1 if unreachable
+          example: "12"
+      required: [host, reachable, response_time]
+
+    TcpResponse:
+      type: object
+      description: Result of a TCP port connectivity check
+      properties:
+        host:
+          type: string
+          description: Hostname that was tested
+          example: vm10477.org.oebb.at
+        port:
+          type: string
+          description: TCP port number that was tested
+          example: "443"
+        open:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the TCP port accepted the connection
+          example: "true"
+        response_time:
+          type: string
+          description: Connection time in milliseconds, or -1 if the port is closed
+          example: "8"
+      required: [host, port, open, response_time]
+
+    HttpResponse:
+      type: object
+      description: Result of an HTTP(S) GET request
+      properties:
+        url:
+          type: string
+          description: URL that was requested
+          example: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+        http_status:
+          type: string
+          description: HTTP status code returned by the server, or 0 if the connection failed
+          example: "401"
+        reachable:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the server returned any HTTP response (status > 0)
+          example: "true"
+        error_msg:
+          type: string
+          description: Error message if the request failed, otherwise empty string
+          example: ""
+      required: [url, http_status, reachable, error_msg]
+
+    CheckAllResponse:
+      type: object
+      description: Combined result of all four endpoint checks
+      properties:
+        url:
+          type: string
+          description: URL that was checked
+          example: "https://vm10477.org.oebb.at/MARS_PRSAP_Service"
+        host:
+          type: string
+          description: Resolved hostname extracted from the URL
+          example: vm10477.org.oebb.at
+        resolved_ip:
+          type: string
+          description: DNS-resolved IP address
+          example: "10.66.24.18"
+        ping_reachable:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the host responded to ICMP ping
+          example: "true"
+        ping_response_time:
+          type: string
+          description: Ping round-trip time in milliseconds, or -1
+          example: "12"
+        tcp_port:
+          type: string
+          description: TCP port that was tested (derived from the URL)
+          example: "443"
+        tcp_open:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the TCP port accepted the connection
+          example: "true"
+        tcp_response_time:
+          type: string
+          description: TCP connection time in milliseconds, or -1
+          example: "8"
+        http_status:
+          type: string
+          description: HTTP status code, or 0 if the connection failed
+          example: "401"
+        http_reachable:
+          type: string
+          enum: ["true", "false"]
+          description: Whether the server returned any HTTP response
+          example: "true"
+        http_error_msg:
+          type: string
+          description: HTTP error message if the request failed, otherwise empty string
+          example: ""
+      required:
+        - url
+        - host
+        - resolved_ip
+        - ping_reachable
+        - ping_response_time
+        - tcp_port
+        - tcp_open
+        - tcp_response_time
+        - http_status
+        - http_reachable
+        - http_error_msg
+
+  responses:
+    Unauthorized:
+      description: >
+        Authentication required. No credentials were supplied or the
+        credentials are invalid.
+    Forbidden:
+      description: >
+        Access denied. The authenticated user is not a member of the
+        **Administrators** group on Integration Server.
