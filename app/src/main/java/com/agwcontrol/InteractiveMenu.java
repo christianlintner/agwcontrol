@@ -26,13 +26,6 @@ public class InteractiveMenu {
     private final EndpointCheckService localEndpointCheckService = new EndpointCheckService();
     private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
 
-    /**
-     * Global IS probe override set via CLI (--is-probe-url / --is-probe-user /
-     * --is-probe-password). When non-null it takes precedence over per-server
-     * KeePass custom fields.
-     */
-    private IsEndpointCheckConfig globalIsProbeConfig;
-
     private final ApiDatabase apiDatabase;
     private final DbCacheConfig cacheConfig = new DbCacheConfig();
 
@@ -52,15 +45,6 @@ public class InteractiveMenu {
         } catch (SQLException e) {
             this.out.println("Warnung: Datenbank konnte nicht initialisiert werden: " + e.getMessage());
         }
-    }
-
-    /**
-     * Sets a global IS probe configuration that overrides per-server KeePass
-     * settings. Call this from {@link App} when --is-probe-url is supplied on
-     * the command line.
-     */
-    public void setGlobalIsProbeConfig(IsEndpointCheckConfig config) {
-        this.globalIsProbeConfig = config;
     }
 
     private PrintStream outWithFallback() {
@@ -407,11 +391,11 @@ public class InteractiveMenu {
     }
 
     /**
-     * Returns the IS probe configuration to use for a given server.
-     * Priority: CLI global override → per-server KeePass custom fields → null (local mode).
+     * Returns the IS probe configuration for the given server.
+     * The config is always built from the server entry's own URL/UserName/Password
+     * as loaded from KeePass.
      */
     private IsEndpointCheckConfig resolveProbeConfig(ServerConfig server) {
-        if (globalIsProbeConfig != null) return globalIsProbeConfig;
         return server.getIsProbeConfig();
     }
 
