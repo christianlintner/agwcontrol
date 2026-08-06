@@ -13,7 +13,7 @@ info:
     name: Internal use only
 
 servers:
-  - url: '{scheme}://{host}:{port}/rest/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD'
+  - url: '{scheme}://{host}:{port}/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD'
     description: webMethods Integration Server
     variables:
       scheme:

@@ -7,7 +7,7 @@ package com.agwcontrol;
  *
  * <p>When an instance of this class is supplied to {@link IsEndpointCheckService},
  * all endpoint checks are delegated to the IS REST endpoint
- * {@code GET /rest/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD/check?url=…}
+ * {@code GET /rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD/check?url=…}
  * instead of being executed locally.</p>
  *
  * <p>The IS server is typically the same AGW/IS instance whose APIs are being
@@ -24,7 +24,7 @@ public class IsEndpointCheckConfig {
 
     /** Base path of the REST API Descriptor on IS. */
     public static final String RAD_BASE_PATH =
-            "/rest/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD";
+            "/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD";
 
     private final String scheme;
     private final String host;
@@ -77,7 +77,7 @@ public class IsEndpointCheckConfig {
 
     /**
      * Builds the base URL for the RAD, e.g.
-     * {@code http://localhost:5555/rest/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD}.
+     * {@code http://localhost:5555/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD}.
      */
     public String buildBaseUrl() {
         return scheme + "://" + host + ":" + port + RAD_BASE_PATH;
