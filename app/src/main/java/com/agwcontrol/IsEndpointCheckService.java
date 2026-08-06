@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintStream;
 import java.net.HttpURLConnection;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyManagementException;
@@ -23,19 +24,14 @@ import java.util.regex.Pattern;
  * Delegates all endpoint connectivity checks to a remote webMethods Integration
  * Server instance via the checkRAD REST API Descriptor.
  *
- * <p>Instead of performing DNS resolution, ICMP ping, TCP connect, and HTTP GET
- * locally on the client machine, this service calls:
+ * <p>The IS server exposes three separate probe endpoints:
  * <pre>
- *   GET {IS-base}/check?url={endpointUrl}
+ *   GET {IS-base}/ping?host={host}
+ *   GET {IS-base}/tcp?host={host}&amp;port={port}
+ *   GET {IS-base}/http?url={encodedUrl}
  * </pre>
- * The IS server performs all four probes from its own network location and
- * returns a combined JSON response. This is the intended production mode when
- * the client machine cannot directly reach the backend endpoints (e.g. it sits
- * outside the corporate network while the IS instance is inside).</p>
- *
- * <p>The service implements the same public interface as the local
- * {@link EndpointCheckService} so that call sites in {@link InteractiveMenu}
- * require minimal changes.</p>
+ * This service calls them <em>sequentially</em> with early-exit:
+ * if Ping fails, TCP and HTTP are skipped; if TCP is closed, HTTP is skipped.
  *
  * <p>Authentication uses HTTP Basic Auth with the credentials supplied in
  * {@link IsEndpointCheckConfig}. The IS instance must have the
@@ -72,11 +68,8 @@ public class IsEndpointCheckService {
     // -----------------------------------------------------------------------
 
     /**
-     * Runs the full endpoint check remotely and returns an {@link EndpointCheckResult}.
-     *
-     * <p>Calls {@code GET /check?url={urlStr}} on the configured IS instance.
-     * All four probes (DNS, ping, TCP, HTTP) are performed by IS from its own
-     * network location.</p>
+     * Runs the endpoint check remotely using three sequential IS probe endpoints
+     * (ping → tcp → http) with early-exit on failure.
      *
      * @param apiName    Name of the API being checked (for result labelling only)
      * @param apiVersion Version of the API (for result labelling only)
@@ -85,13 +78,72 @@ public class IsEndpointCheckService {
      */
     public EndpointCheckResult check(String apiName, String apiVersion, String urlStr) {
         debugProbeConfig();
+
+        // Extract host + port from URL
+        String host;
+        int port;
         try {
-            String json = callCheckEndpoint(urlStr);
-            return parseCheckResponse(apiName, apiVersion, null, urlStr, json);
+            URL parsed = new URI(urlStr).toURL();
+            host = parsed.getHost();
+            port = parsed.getPort();
+            if (port == -1) {
+                port = "https".equalsIgnoreCase(parsed.getProtocol()) ? 443 : 80;
+            }
+        } catch (Exception e) {
+            return errorResult(apiName, apiVersion, null, urlStr,
+                    "Ungültige URL: " + e.getMessage());
+        }
+
+        // 1. Ping
+        PingProbeResult ping;
+        try {
+            String json = callPingEndpoint(host);
+            ping = parsePingResponse(json);
         } catch (IOException e) {
             return errorResult(apiName, apiVersion, null, urlStr,
                     "IS probe unreachable: " + e.getMessage());
         }
+        debugMsg("[HTTP-DEBUG] IS PING " + host + " → "
+                + (ping.reachable ? "OK " + ping.responseTimeMs + "ms" : "FAIL"));
+        if (!ping.reachable) {
+            return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
+                    0, false, "Ping fehlgeschlagen",
+                    false, ping.responseTimeMs, false, -1L);
+        }
+
+        // 2. TCP
+        TcpProbeResult tcp;
+        try {
+            String json = callTcpEndpoint(host, port);
+            tcp = parseTcpResponse(json);
+        } catch (IOException e) {
+            return errorResult(apiName, apiVersion, null, urlStr,
+                    "IS probe unreachable: " + e.getMessage());
+        }
+        debugMsg("[HTTP-DEBUG] IS TCP  " + host + ":" + port + " → "
+                + (tcp.open ? "OPEN " + tcp.responseTimeMs + "ms" : "CLOSED"));
+        if (!tcp.open) {
+            return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
+                    0, false, "TCP nicht erreichbar",
+                    true, ping.responseTimeMs, false, tcp.responseTimeMs);
+        }
+
+        // 3. HTTP
+        HttpProbeResult http;
+        try {
+            String json = callHttpEndpoint(urlStr);
+            http = parseHttpResponse(json, urlStr);
+        } catch (IOException e) {
+            return errorResult(apiName, apiVersion, null, urlStr,
+                    "IS probe unreachable: " + e.getMessage());
+        }
+        debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → "
+                + (http.status > 0 ? "Status " + http.status
+                        : "FAIL" + (http.errorMsg.isEmpty() ? "" : " (" + http.errorMsg + ")")));
+
+        return new EndpointCheckResult(apiName, apiVersion, null, http.url,
+                http.status, http.reachable, http.errorMsg,
+                true, ping.responseTimeMs, true, tcp.responseTimeMs);
     }
 
     /**
@@ -109,29 +161,56 @@ public class IsEndpointCheckService {
                                      String environment, String apiId, String serverHost,
                                      ApiDatabase db) throws SQLException {
         debugProbeConfig();
-        EndpointCheckResult result;
-        try {
-            String json = callCheckEndpoint(urlStr);
-            result = parseCheckResponse(apiName, apiVersion, aliasName, urlStr, json);
-        } catch (IOException e) {
-            result = errorResult(apiName, apiVersion, aliasName, urlStr,
-                    "IS probe unreachable: " + e.getMessage());
-        }
-        db.saveCheckResult(environment, apiId, serverHost, result);
-        return result;
+        EndpointCheckResult result = check(apiName, apiVersion, urlStr);
+        // Re-wrap with alias name if provided
+        EndpointCheckResult withAlias = aliasName != null
+                ? new EndpointCheckResult(result.getApiName(), result.getApiVersion(),
+                        aliasName, result.getUrl(),
+                        result.getHttpStatus(), result.isReachable(), result.getErrorMsg(),
+                        result.isPingOk(), result.getPingMs(),
+                        result.isTcpOk(), result.getTcpMs())
+                : result;
+        db.saveCheckResult(environment, apiId, serverHost, withAlias);
+        return withAlias;
     }
 
     // -----------------------------------------------------------------------
-    // HTTP call
+    // IS HTTP calls — one method per probe
     // -----------------------------------------------------------------------
 
     /**
-     * Calls {@code GET /check?url={encodedUrl}} on the IS RAD and returns the raw
-     * JSON response body.
+     * Calls {@code GET /ping?host={host}} on the IS RAD and returns the raw JSON body.
+     * Logs the full request URL, HTTP status, and response body when debug is enabled.
      */
-    private String callCheckEndpoint(String endpointUrl) throws IOException {
-        String encodedUrl = encodeQueryParam(endpointUrl);
-        String fullUrl    = config.buildBaseUrl() + "/check?url=" + encodedUrl;
+    String callPingEndpoint(String host) throws IOException {
+        String fullUrl = config.buildBaseUrl() + "/ping?host=" + encodeQueryParam(host);
+        return callIsEndpoint(fullUrl);
+    }
+
+    /**
+     * Calls {@code GET /tcp?host={host}&port={port}} on the IS RAD and returns the raw JSON body.
+     * Logs the full request URL, HTTP status, and response body when debug is enabled.
+     */
+    String callTcpEndpoint(String host, int port) throws IOException {
+        String fullUrl = config.buildBaseUrl() + "/tcp?host=" + encodeQueryParam(host)
+                + "&port=" + port;
+        return callIsEndpoint(fullUrl);
+    }
+
+    /**
+     * Calls {@code GET /http?url={encodedUrl}} on the IS RAD and returns the raw JSON body.
+     * Logs the full request URL, HTTP status, and response body when debug is enabled.
+     */
+    String callHttpEndpoint(String endpointUrl) throws IOException {
+        String fullUrl = config.buildBaseUrl() + "/http?url=" + encodeQueryParam(endpointUrl);
+        return callIsEndpoint(fullUrl);
+    }
+
+    /**
+     * Shared HTTP call: opens a connection to {@code fullUrl}, logs request/status/body,
+     * validates the IS response code, and returns the response body.
+     */
+    private String callIsEndpoint(String fullUrl) throws IOException {
         URL url = new URL(fullUrl);
 
         debugMsg("[HTTP-DEBUG] IS GET " + fullUrl);
@@ -198,7 +277,6 @@ public class IsEndpointCheckService {
     /** Percent-encodes a query parameter value (replaces the characters that break URLs). */
     private static String encodeQueryParam(String value) {
         if (value == null) return "";
-        // Use java.net.URLEncoder but swap '+' back to '%20'
         try {
             return java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20");
         } catch (java.io.UnsupportedEncodingException e) {
@@ -207,64 +285,98 @@ public class IsEndpointCheckService {
     }
 
     // -----------------------------------------------------------------------
-    // Response parsing
+    // Response parsing — one method per probe
     // -----------------------------------------------------------------------
 
-    /**
-     * Parses the JSON body returned by {@code GET /check} into an
-     * {@link EndpointCheckResult}.
-     *
-     * <p>Expected JSON fields (all strings, matching the IS service output signature):
-     * <pre>
-     * {
-     *   "url":               "https://...",
-     *   "host":              "vm10477.org.oebb.at",
-     *   "resolved_ip":       "10.66.24.18",
-     *   "ping_reachable":    "true",
-     *   "ping_response_time":"12",
-     *   "tcp_port":          "443",
-     *   "tcp_open":          "true",
-     *   "tcp_response_time": "8",
-     *   "http_status":       "401",
-     *   "http_reachable":    "true",
-     *   "http_error_msg":    ""
-     * }
-     * </pre>
-     */
-    EndpointCheckResult parseCheckResponse(String apiName, String apiVersion,
-                                           String aliasName, String fallbackUrl,
-                                           String json) {
-        if (json == null || json.isEmpty()) {
-            return errorResult(apiName, apiVersion, aliasName, fallbackUrl,
-                    "IS returned empty response");
+    /** Internal value object for a ping probe response. */
+    static final class PingProbeResult {
+        final boolean reachable;
+        final long    responseTimeMs;
+        PingProbeResult(boolean reachable, long responseTimeMs) {
+            this.reachable       = reachable;
+            this.responseTimeMs  = responseTimeMs;
         }
+    }
 
+    /** Internal value object for a TCP probe response. */
+    static final class TcpProbeResult {
+        final boolean open;
+        final long    responseTimeMs;
+        TcpProbeResult(boolean open, long responseTimeMs) {
+            this.open            = open;
+            this.responseTimeMs  = responseTimeMs;
+        }
+    }
+
+    /** Internal value object for an HTTP probe response. */
+    static final class HttpProbeResult {
+        final String  url;
+        final int     status;
+        final boolean reachable;
+        final String  errorMsg;
+        HttpProbeResult(String url, int status, boolean reachable, String errorMsg) {
+            this.url       = url;
+            this.status    = status;
+            this.reachable = reachable;
+            this.errorMsg  = errorMsg;
+        }
+    }
+
+    /**
+     * Parses the JSON body returned by {@code GET /ping} into a {@link PingProbeResult}.
+     *
+     * <p>Expected fields: {@code reachable}, {@code response_time}</p>
+     */
+    PingProbeResult parsePingResponse(String json) {
+        if (json == null || json.isEmpty()) {
+            return new PingProbeResult(false, -1L);
+        }
+        java.util.Map<String, String> f = parseJsonStrings(json);
+        boolean reachable = "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
+        long    ms        = parseLong(f.getOrDefault("response_time", "-1"), -1L);
+        return new PingProbeResult(reachable, ms);
+    }
+
+    /**
+     * Parses the JSON body returned by {@code GET /tcp} into a {@link TcpProbeResult}.
+     *
+     * <p>Expected fields: {@code open}, {@code response_time}</p>
+     */
+    TcpProbeResult parseTcpResponse(String json) {
+        if (json == null || json.isEmpty()) {
+            return new TcpProbeResult(false, -1L);
+        }
+        java.util.Map<String, String> f = parseJsonStrings(json);
+        boolean open = "true".equalsIgnoreCase(f.getOrDefault("open", "false"));
+        long    ms   = parseLong(f.getOrDefault("response_time", "-1"), -1L);
+        return new TcpProbeResult(open, ms);
+    }
+
+    /**
+     * Parses the JSON body returned by {@code GET /http} into an {@link HttpProbeResult}.
+     *
+     * <p>Expected fields: {@code url}, {@code http_status}, {@code reachable},
+     * {@code error_msg}</p>
+     */
+    HttpProbeResult parseHttpResponse(String json, String fallbackUrl) {
+        if (json == null || json.isEmpty()) {
+            return new HttpProbeResult(fallbackUrl, 0, false, "IS returned empty response");
+        }
+        java.util.Map<String, String> f = parseJsonStrings(json);
+        String  url      = f.getOrDefault("url",          fallbackUrl);
+        int     status   = parseInt(f.getOrDefault("http_status", "0"), 0);
+        boolean reachable= "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
+        String  errorMsg = f.getOrDefault("error_msg",    "");
+        return new HttpProbeResult(url, status, reachable, errorMsg);
+    }
+
+    private static java.util.Map<String, String> parseJsonStrings(String json) {
         java.util.Map<String, String> fields = new java.util.HashMap<>();
         Matcher m = JSON_STRING.matcher(json);
         while (m.find()) {
             fields.put(m.group(1), m.group(2));
         }
-
-        String url          = fields.getOrDefault("url",               fallbackUrl);
-        String pingReachable= fields.getOrDefault("ping_reachable",    "false");
-        String pingTime     = fields.getOrDefault("ping_response_time","-1");
-        String tcpOpen      = fields.getOrDefault("tcp_open",          "false");
-        String tcpTime      = fields.getOrDefault("tcp_response_time", "-1");
-        String httpStatus   = fields.getOrDefault("http_status",       "0");
-        String httpReachable= fields.getOrDefault("http_reachable",    "false");
-        String httpErrorMsg = fields.getOrDefault("http_error_msg",    "");
-
-        boolean pingOk   = "true".equalsIgnoreCase(pingReachable);
-        long    pingMs   = parseLong(pingTime, -1L);
-        boolean tcpOk    = "true".equalsIgnoreCase(tcpOpen);
-        long    tcpMs    = parseLong(tcpTime,  -1L);
-        int     status   = parseInt(httpStatus, 0);
-        boolean reachable= "true".equalsIgnoreCase(httpReachable);
-
-        return new EndpointCheckResult(
-                apiName, apiVersion, aliasName, url,
-                status, reachable, httpErrorMsg,
-                pingOk, pingMs, tcpOk, tcpMs);
+        return fields;
     }
 
     private static long parseLong(String s, long defaultValue) {
