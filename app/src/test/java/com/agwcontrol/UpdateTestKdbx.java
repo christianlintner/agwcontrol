@@ -18,26 +18,41 @@ class UpdateTestKdbx {
 
     /**
      * Aktualisiert die test.kdbx und gibt zurück ob eine Änderung vorgenommen wurde.
+     * Setzt im ersten Eintrag der OH-DEV Gruppe:
+     * <ul>
+     *   <li>CLUSTER-URL</li>
+     *   <li>CLUSTER-CERT-URL</li>
+     *   <li>IS-PROBE-URL      = http://localhost:5555</li>
+     *   <li>IS-PROBE-USER     = Administrator</li>
+     *   <li>IS-PROBE-PASSWORD = manage</li>
+     * </ul>
      */
     static boolean updateIfNeeded(Path kdbxPath) throws Exception {
         KeePassFile db = KeePassDatabase.getInstance(kdbxPath.toFile()).openDatabase(MASTER_PASSWORD);
 
-        // Prüfen ob bereits vorhanden
+        // Prüfen ob bereits vorhanden — CLUSTER-URL UND IS-PROBE-URL müssen beide gesetzt sein,
+        // damit ein bereits-aktualisiertes kdbx nicht nochmals angefasst wird.
         Group ohDev = findGroup(db.getRoot(), "OH-DEV");
         if (ohDev == null) throw new IllegalStateException("OH-DEV nicht gefunden");
 
         for (Entry e : ohDev.getEntries()) {
-            Property p = e.getPropertyByName("CLUSTER-URL");
-            if (p != null && p.getValue() != null && !p.getValue().isEmpty()) {
-                return false; // bereits vorhanden
+            Property clusterUrl  = e.getPropertyByName("CLUSTER-URL");
+            Property isProbeUrl  = e.getPropertyByName("IS-PROBE-URL");
+            boolean hasCluster   = clusterUrl  != null && clusterUrl.getValue()  != null && !clusterUrl.getValue().isEmpty();
+            boolean hasIsProbe   = isProbeUrl  != null && isProbeUrl.getValue()  != null && !isProbeUrl.getValue().isEmpty();
+            if (hasCluster && hasIsProbe) {
+                return false; // bereits vollständig vorhanden
             }
         }
 
-        // Ersten Eintrag mit CLUSTER-URL + CLUSTER-CERT-URL ergänzen
+        // Ersten Eintrag mit allen Custom Fields ergänzen
         Entry first = ohDev.getEntries().get(0);
         EntryBuilder eb = new EntryBuilder(first);
         eb.getCustomPropertyList().add(new Property("CLUSTER-URL",      "https://apigateway-oh-dev.oebb.at",       false));
         eb.getCustomPropertyList().add(new Property("CLUSTER-CERT-URL", "https://apigateway-cert-oh-dev.oebb.at", false));
+        eb.getCustomPropertyList().add(new Property("IS-PROBE-URL",      "http://localhost:5555",                  false));
+        eb.getCustomPropertyList().add(new Property("IS-PROBE-USER",     "Administrator",                          false));
+        eb.getCustomPropertyList().add(new Property("IS-PROBE-PASSWORD", "manage",                                 false));
         Entry updated = eb.build();
 
         // Gruppe neu bauen mit dem aktualisierten Eintrag

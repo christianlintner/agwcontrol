@@ -151,4 +151,36 @@ class KeePassConfigLoaderTest {
         ServerConfig entry = dn.getServers().get(0);
         assertNull(entry.getClusterUrl(), "DN2020-DEV sollte keine CLUSTER-URL haben");
     }
+
+    // --- IS-Probe custom fields ---
+
+    @Test
+    void isProbeConfigNullWhenFieldsAbsent() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // DN2020-DEV has no IS-PROBE-* fields → isProbeConfig must be null
+        ServerGroup dn = groups.stream()
+                .filter(g -> "DN2020-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe DN2020-DEV nicht gefunden"));
+        ServerConfig entry = dn.getServers().get(0);
+        assertNull(entry.getIsProbeConfig(),
+                "isProbeConfig must be null when IS-PROBE-* custom fields are absent");
+    }
+
+    @Test
+    void isProbeConfigParsedFromCustomFields() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // OH-DEV first entry has IS-PROBE-* fields set by UpdateTestKdbx
+        ServerGroup ohDev = groups.stream()
+                .filter(g -> "OH-DEV".equals(g.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Gruppe OH-DEV nicht gefunden"));
+        ServerConfig entry = ohDev.getServers().get(0);
+        IsEndpointCheckConfig probe = entry.getIsProbeConfig();
+        assertNotNull(probe, "isProbeConfig muss gesetzt sein wenn IS-PROBE-* Felder vorhanden sind");
+        assertEquals("http",      probe.getScheme());
+        assertEquals("localhost",  probe.getHost());
+        assertEquals(5555,         probe.getPort());
+        assertEquals("Administrator", probe.getUsername());
+    }
 }
