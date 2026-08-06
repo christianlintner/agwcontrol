@@ -5,6 +5,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -24,14 +25,27 @@ public class EndpointCheckService {
 
     private final PingService pingService;
     private final TcpCheckService tcpService;
+    private final HttpDebugConfig httpDebugConfig;
+    private final PrintStream debugStream;
 
     public EndpointCheckService() {
-        this(new PingService(), new TcpCheckService());
+        this(new PingService(), new TcpCheckService(), new HttpDebugConfig(), System.out);
+    }
+
+    public EndpointCheckService(HttpDebugConfig httpDebugConfig, PrintStream debugStream) {
+        this(new PingService(), new TcpCheckService(), httpDebugConfig, debugStream);
     }
 
     EndpointCheckService(PingService pingService, TcpCheckService tcpService) {
-        this.pingService = pingService;
-        this.tcpService  = tcpService;
+        this(pingService, tcpService, new HttpDebugConfig(), System.out);
+    }
+
+    EndpointCheckService(PingService pingService, TcpCheckService tcpService,
+                         HttpDebugConfig httpDebugConfig, PrintStream debugStream) {
+        this.pingService     = pingService;
+        this.tcpService      = tcpService;
+        this.httpDebugConfig = httpDebugConfig != null ? httpDebugConfig : new HttpDebugConfig();
+        this.debugStream     = debugStream != null ? debugStream : System.out;
     }
 
     /**
@@ -58,14 +72,19 @@ public class EndpointCheckService {
         }
 
         // Ping
+        debugMsg("[HTTP-DEBUG] PING " + host);
         PingResult ping = pingService.ping(host, PING_TIMEOUT_MS);
+        debugMsg("[HTTP-DEBUG] PING " + host + " → " + (ping.isReachable() ? "OK " + ping.getResponseTimeMs() + "ms" : "FAIL"));
 
         // TCP
+        debugMsg("[HTTP-DEBUG] TCP  " + host + ":" + port);
         TcpCheckResult tcp = tcpService.check(host, port, TCP_TIMEOUT_MS);
+        debugMsg("[HTTP-DEBUG] TCP  " + host + ":" + port + " → " + (tcp.isOpen() ? "OPEN " + tcp.getResponseTimeMs() + "ms" : "CLOSED"));
 
         // HTTP
         int httpStatus = 0;
         String errorMsg = "";
+        debugMsg("[HTTP-DEBUG] GET  " + urlStr);
         try {
             httpStatus = doRequest(urlStr, "HEAD");
             if (httpStatus == 405) {
@@ -74,6 +93,7 @@ public class EndpointCheckService {
         } catch (Exception e) {
             errorMsg = e.getMessage();
         }
+        debugMsg("[HTTP-DEBUG] HTTP " + urlStr + " → " + (httpStatus > 0 ? "Status " + httpStatus : "FAIL" + (errorMsg.isEmpty() ? "" : " (" + errorMsg + ")")));
         boolean reachable = httpStatus > 0;
 
         return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
@@ -107,6 +127,18 @@ public class EndpointCheckService {
         db.saveCheckResult(environment, apiId, serverHost, withAlias);
         return withAlias;
     }
+
+    // -----------------------------------------------------------------------
+    // Debug helpers
+    // -----------------------------------------------------------------------
+
+    private void debugMsg(String msg) {
+        if (httpDebugConfig.isEnabled()) {
+            debugStream.println(msg);
+        }
+    }
+
+    // -----------------------------------------------------------------------
 
     private int doRequest(String urlStr, String method) throws IOException {
         URL url;

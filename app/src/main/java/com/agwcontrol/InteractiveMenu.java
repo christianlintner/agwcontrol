@@ -23,8 +23,8 @@ public class InteractiveMenu {
     private final HttpDebugConfig httpDebugConfig = new HttpDebugConfig();
     private final AgwApiService agwApiService = new AgwApiService(httpDebugConfig, outWithFallback());
     private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
-    private final EndpointCheckService localEndpointCheckService = new EndpointCheckService();
     private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
+    private final EndpointCheckService localEndpointCheckService;
 
     private final ApiDatabase apiDatabase;
     private final DbCacheConfig cacheConfig = new DbCacheConfig();
@@ -39,6 +39,7 @@ public class InteractiveMenu {
         this.groups = groups;
         this.scanner = new Scanner(in);
         this.out = out;
+        this.localEndpointCheckService = new EndpointCheckService(httpDebugConfig, out != null ? out : System.out);
         this.apiDatabase = new ApiDatabase(dbPath);
         try {
             this.apiDatabase.initSchema();
@@ -438,7 +439,7 @@ public class InteractiveMenu {
                 try {
                     EndpointCheckResult r;
                     if (remote) {
-                        IsEndpointCheckService remoteService = new IsEndpointCheckService(probeConfig);
+                        IsEndpointCheckService remoteService = new IsEndpointCheckService(probeConfig, httpDebugConfig, out);
                         r = remoteService.check(
                                 api.getName(), api.getVersion(),
                                 ep.isAlias() ? ep.getAliasName() : null,
@@ -458,7 +459,7 @@ public class InteractiveMenu {
                     out.println(ts() + "  Warnung: Check-Ergebnis konnte nicht gespeichert werden: " + e.getMessage());
                     EndpointCheckResult r;
                     if (remote) {
-                        r = new IsEndpointCheckService(probeConfig).check(
+                        r = new IsEndpointCheckService(probeConfig, httpDebugConfig, out).check(
                                 api.getName(), api.getVersion(), url);
                     } else {
                         r = localEndpointCheckService.check(api.getName(), api.getVersion(), url);

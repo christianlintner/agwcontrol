@@ -7,6 +7,7 @@ import javax.net.ssl.X509TrustManager;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -50,10 +51,20 @@ public class IsEndpointCheckService {
             Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"");
 
     private final IsEndpointCheckConfig config;
+    private final HttpDebugConfig httpDebugConfig;
+    private final PrintStream debugStream;
 
     public IsEndpointCheckService(IsEndpointCheckConfig config) {
+        this(config, new HttpDebugConfig(), System.out);
+    }
+
+    public IsEndpointCheckService(IsEndpointCheckConfig config,
+                                  HttpDebugConfig httpDebugConfig,
+                                  PrintStream debugOut) {
         if (config == null) throw new IllegalArgumentException("config must not be null");
-        this.config = config;
+        this.config          = config;
+        this.httpDebugConfig = httpDebugConfig != null ? httpDebugConfig : new HttpDebugConfig();
+        this.debugStream     = debugOut != null ? debugOut : System.out;
     }
 
     // -----------------------------------------------------------------------
@@ -73,6 +84,7 @@ public class IsEndpointCheckService {
      * @return populated {@link EndpointCheckResult}; never {@code null}
      */
     public EndpointCheckResult check(String apiName, String apiVersion, String urlStr) {
+        debugProbeConfig();
         try {
             String json = callCheckEndpoint(urlStr);
             return parseCheckResponse(apiName, apiVersion, null, urlStr, json);
@@ -96,6 +108,7 @@ public class IsEndpointCheckService {
                                      String aliasName, String urlStr,
                                      String environment, String apiId, String serverHost,
                                      ApiDatabase db) throws SQLException {
+        debugProbeConfig();
         EndpointCheckResult result;
         try {
             String json = callCheckEndpoint(urlStr);
@@ -121,9 +134,12 @@ public class IsEndpointCheckService {
         String fullUrl    = config.buildBaseUrl() + "/check?url=" + encodedUrl;
         URL url = new URL(fullUrl);
 
+        debugMsg("[HTTP-DEBUG] IS GET " + fullUrl);
+
         HttpURLConnection conn = openConnection(url);
         try {
             int status = conn.getResponseCode();
+            debugMsg("[HTTP-DEBUG] IS Status " + status);
             if (status == 401) {
                 throw new IOException(
                         "IS authentication failed (HTTP 401) — check IS credentials in config");
@@ -135,7 +151,9 @@ public class IsEndpointCheckService {
             if (status < 200 || status >= 300) {
                 throw new IOException("IS returned HTTP " + status + " for " + fullUrl);
             }
-            return readBody(conn);
+            String body = readBody(conn);
+            debugBody(body);
+            return body;
         } finally {
             conn.disconnect();
         }
@@ -266,6 +284,29 @@ public class IsEndpointCheckService {
                 apiName, apiVersion, aliasName, url,
                 0, false, errorMsg,
                 false, -1L, false, -1L);
+    }
+
+    // -----------------------------------------------------------------------
+    // Debug helpers
+    // -----------------------------------------------------------------------
+
+    private void debugProbeConfig() {
+        if (httpDebugConfig.isEnabled()) {
+            debugStream.println("[HTTP-DEBUG] IS-Probe: " + config.buildBaseUrl()
+                    + "  user=" + config.getUsername());
+        }
+    }
+
+    private void debugMsg(String msg) {
+        if (httpDebugConfig.isEnabled()) {
+            debugStream.println(msg);
+        }
+    }
+
+    private void debugBody(String body) {
+        if (httpDebugConfig.shouldIncludeResponseBody()) {
+            debugStream.println("[HTTP-DEBUG] IS Body " + body);
+        }
     }
 
     // -----------------------------------------------------------------------
