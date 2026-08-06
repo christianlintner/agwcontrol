@@ -2,14 +2,16 @@ package com.agwcontrol;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for {@link IsEndpointCheckService}.
  *
- * <p>All tests operate on the pure in-process logic (JSON parsing, URL encoding,
- * error result construction) and do not make any real network calls. Integration
- * with a live IS instance is out of scope for unit tests.</p>
+ * <p>All tests operate on pure in-process logic (JSON parsing, URL building,
+ * sequential orchestration with early-exit) and do not make any real network
+ * calls. Integration with a live IS instance is out of scope for unit tests.</p>
  */
 class IsEndpointCheckServiceTest {
 
@@ -18,149 +20,148 @@ class IsEndpointCheckServiceTest {
 
     private final IsEndpointCheckService service = new IsEndpointCheckService(CONFIG);
 
-    // --- parseCheckResponse — happy path ---
+    // -----------------------------------------------------------------------
+    // parsePingResponse
+    // -----------------------------------------------------------------------
 
     @Test
-    void parsesAllFieldsFromFullResponse() {
-        String json = "{"
-                + "\"url\":\"https://vm10477.org.oebb.at/MARS\","
-                + "\"host\":\"vm10477.org.oebb.at\","
-                + "\"resolved_ip\":\"10.66.24.18\","
-                + "\"ping_reachable\":\"true\","
-                + "\"ping_response_time\":\"12\","
-                + "\"tcp_port\":\"443\","
-                + "\"tcp_open\":\"true\","
-                + "\"tcp_response_time\":\"8\","
+    void parsePingResponse_reachableTrue() {
+        // IS /ping response format: {"host":"...","reachable":"true","response_time":"1"}
+        String json = "{\"host\":\"vm10477\",\"reachable\":\"true\",\"response_time\":\"12\"}";
+        IsEndpointCheckService.PingProbeResult r = service.parsePingResponse(json);
+        assertTrue(r.reachable);
+        assertEquals(12L, r.responseTimeMs);
+    }
+
+    @Test
+    void parsePingResponse_reachableFalse() {
+        String json = "{\"host\":\"vm10477\",\"reachable\":\"false\",\"response_time\":\"-1\"}";
+        IsEndpointCheckService.PingProbeResult r = service.parsePingResponse(json);
+        assertFalse(r.reachable);
+        assertEquals(-1L, r.responseTimeMs);
+    }
+
+    @Test
+    void parsePingResponse_caseInsensitiveTrue() {
+        String json = "{\"reachable\":\"TRUE\",\"response_time\":\"9\"}";
+        assertTrue(service.parsePingResponse(json).reachable);
+    }
+
+    @Test
+    void parsePingResponse_missingFieldsDefaultToFalse() {
+        IsEndpointCheckService.PingProbeResult r = service.parsePingResponse("{}");
+        assertFalse(r.reachable);
+        assertEquals(-1L, r.responseTimeMs);
+    }
+
+    @Test
+    void parsePingResponse_nullOrEmptyReturnsFail() {
+        IsEndpointCheckService.PingProbeResult rNull  = service.parsePingResponse(null);
+        IsEndpointCheckService.PingProbeResult rEmpty = service.parsePingResponse("");
+        assertFalse(rNull.reachable);
+        assertFalse(rEmpty.reachable);
+        assertEquals(-1L, rNull.responseTimeMs);
+        assertEquals(-1L, rEmpty.responseTimeMs);
+    }
+
+    // -----------------------------------------------------------------------
+    // parseTcpResponse
+    // -----------------------------------------------------------------------
+
+    @Test
+    void parseTcpResponse_open() {
+        // IS /tcp response format: {"host":"...","port":"443","open":"true","response_time":"8"}
+        String json = "{\"host\":\"vm10477\",\"port\":\"443\",\"open\":\"true\",\"response_time\":\"8\"}";
+        IsEndpointCheckService.TcpProbeResult r = service.parseTcpResponse(json);
+        assertTrue(r.open);
+        assertEquals(8L, r.responseTimeMs);
+    }
+
+    @Test
+    void parseTcpResponse_closed() {
+        String json = "{\"host\":\"vm10477\",\"port\":\"443\",\"open\":\"false\",\"response_time\":\"-1\"}";
+        IsEndpointCheckService.TcpProbeResult r = service.parseTcpResponse(json);
+        assertFalse(r.open);
+        assertEquals(-1L, r.responseTimeMs);
+    }
+
+    @Test
+    void parseTcpResponse_caseInsensitiveFalse() {
+        String json = "{\"open\":\"False\",\"response_time\":\"-1\"}";
+        assertFalse(service.parseTcpResponse(json).open);
+    }
+
+    @Test
+    void parseTcpResponse_missingFieldsDefaultToFalse() {
+        IsEndpointCheckService.TcpProbeResult r = service.parseTcpResponse("{}");
+        assertFalse(r.open);
+        assertEquals(-1L, r.responseTimeMs);
+    }
+
+    @Test
+    void parseTcpResponse_nullOrEmptyReturnsClosed() {
+        assertFalse(service.parseTcpResponse(null).open);
+        assertFalse(service.parseTcpResponse("").open);
+    }
+
+    // -----------------------------------------------------------------------
+    // parseHttpResponse
+    // -----------------------------------------------------------------------
+
+    @Test
+    void parseHttpResponse_fullResponse() {
+        // IS /http response format: {"url":"...","http_status":"401","reachable":"true","error_msg":""}
+        String json = "{\"url\":\"https://vm10477.org.oebb.at/MARS\","
                 + "\"http_status\":\"401\","
-                + "\"http_reachable\":\"true\","
-                + "\"http_error_msg\":\"\""
-                + "}";
-
-        EndpointCheckResult r = service.parseCheckResponse("MyAPI", "v1", null,
-                "https://vm10477.org.oebb.at/MARS", json);
-
-        assertEquals("MyAPI", r.getApiName());
-        assertEquals("v1",    r.getApiVersion());
-        assertNull(r.getAliasName());
-        assertEquals("https://vm10477.org.oebb.at/MARS", r.getUrl());
-        assertEquals(401,   r.getHttpStatus());
-        assertTrue(r.isReachable());
-        assertEquals("",    r.getErrorMsg());
-        assertTrue(r.isPingOk());
-        assertEquals(12L,   r.getPingMs());
-        assertTrue(r.isTcpOk());
-        assertEquals(8L,    r.getTcpMs());
+                + "\"reachable\":\"true\","
+                + "\"error_msg\":\"\"}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parseHttpResponse(json, "https://fallback.example.com");
+        assertEquals("https://vm10477.org.oebb.at/MARS", r.url);
+        assertEquals(401, r.status);
+        assertTrue(r.reachable);
+        assertEquals("", r.errorMsg);
     }
 
     @Test
-    void parsesAliasName() {
-        String json = "{\"url\":\"https://host/api\",\"http_status\":\"200\","
-                + "\"http_reachable\":\"true\",\"http_error_msg\":\"\","
-                + "\"ping_reachable\":\"true\",\"ping_response_time\":\"5\","
-                + "\"tcp_open\":\"true\",\"tcp_response_time\":\"3\"}";
-
-        EndpointCheckResult r = service.parseCheckResponse("API", "1", "MY_ALIAS",
-                "https://host/api", json);
-
-        assertEquals("MY_ALIAS", r.getAliasName());
+    void parseHttpResponse_useFallbackUrlWhenUrlMissing() {
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parseHttpResponse("{}", "https://fallback.example.com/path");
+        assertEquals("https://fallback.example.com/path", r.url);
     }
 
     @Test
-    void pingFalseAndMinusOneWhenPingUnreachable() {
-        String json = "{\"url\":\"https://host/api\","
-                + "\"ping_reachable\":\"false\",\"ping_response_time\":\"-1\","
-                + "\"tcp_open\":\"false\",\"tcp_response_time\":\"-1\","
-                + "\"http_status\":\"0\",\"http_reachable\":\"false\","
-                + "\"http_error_msg\":\"Connection refused\"}";
-
-        EndpointCheckResult r = service.parseCheckResponse("A", "1", null, "https://host/api", json);
-
-        assertFalse(r.isPingOk());
-        assertEquals(-1L, r.getPingMs());
-        assertFalse(r.isTcpOk());
-        assertEquals(-1L, r.getTcpMs());
-        assertEquals(0,   r.getHttpStatus());
-        assertFalse(r.isReachable());
-        assertEquals("Connection refused", r.getErrorMsg());
-    }
-
-    // --- parseCheckResponse — missing / partial fields ---
-
-    @Test
-    void missingFieldsDefaultToSafeValues() {
-        // Minimal JSON — only url present
-        String json = "{\"url\":\"https://fallback.example.com/path\"}";
-
-        EndpointCheckResult r = service.parseCheckResponse("API", "1", null,
-                "https://fallback.example.com/path", json);
-
-        assertEquals(0,     r.getHttpStatus());
-        assertFalse(r.isReachable());
-        assertEquals("",    r.getErrorMsg());
-        assertFalse(r.isPingOk());
-        assertEquals(-1L,   r.getPingMs());
-        assertFalse(r.isTcpOk());
-        assertEquals(-1L,   r.getTcpMs());
+    void parseHttpResponse_nonNumericStatusDefaultsToZero() {
+        String json = "{\"http_status\":\"bad\",\"reachable\":\"false\",\"error_msg\":\"\"}";
+        assertEquals(0, service.parseHttpResponse(json, "https://host").status);
     }
 
     @Test
-    void emptyJsonUsesCallSiteFallbackUrl() {
-        EndpointCheckResult r = service.parseCheckResponse("API", "1", null,
-                "https://original-url.example.com/path", "{}");
-
-        // When "url" key is absent the json parser returns fallbackUrl
-        assertEquals("https://original-url.example.com/path", r.getUrl());
+    void parseHttpResponse_nullOrEmptyReturnsErrorResult() {
+        IsEndpointCheckService.HttpProbeResult rNull  =
+                service.parseHttpResponse(null,  "https://host/path");
+        IsEndpointCheckService.HttpProbeResult rEmpty =
+                service.parseHttpResponse("", "https://host/path");
+        assertEquals(0, rNull.status);
+        assertFalse(rNull.reachable);
+        assertFalse(rNull.errorMsg.isEmpty());
+        assertEquals(0, rEmpty.status);
+        assertFalse(rEmpty.reachable);
+        assertFalse(rEmpty.errorMsg.isEmpty());
     }
 
     @Test
-    void nullJsonProducesErrorResult() {
-        EndpointCheckResult r = service.parseCheckResponse("API", "1", null,
-                "https://host/path", null);
-
-        assertEquals(0,    r.getHttpStatus());
-        assertFalse(r.isReachable());
-        assertTrue(r.getErrorMsg() != null && !r.getErrorMsg().isEmpty());
+    void parseHttpResponse_errorMsg() {
+        String json = "{\"url\":\"https://host\",\"http_status\":\"0\","
+                + "\"reachable\":\"false\","
+                + "\"error_msg\":\"Connection refused\"}";
+        assertEquals("Connection refused",
+                service.parseHttpResponse(json, "https://host").errorMsg);
     }
 
-    @Test
-    void emptyStringJsonProducesErrorResult() {
-        EndpointCheckResult r = service.parseCheckResponse("API", "1", null,
-                "https://host/path", "");
-
-        assertEquals(0, r.getHttpStatus());
-        assertFalse(r.isReachable());
-        assertTrue(r.getErrorMsg() != null && !r.getErrorMsg().isEmpty());
-    }
-
-    // --- parseCheckResponse — type coercion ---
-
-    @Test
-    void nonNumericHttpStatusDefaultsToZero() {
-        String json = "{\"url\":\"https://host\",\"http_status\":\"bad\","
-                + "\"http_reachable\":\"false\",\"http_error_msg\":\"\","
-                + "\"ping_reachable\":\"false\",\"ping_response_time\":\"0\","
-                + "\"tcp_open\":\"false\",\"tcp_response_time\":\"0\"}";
-
-        EndpointCheckResult r = service.parseCheckResponse("A", "1", null, "https://host", json);
-        assertEquals(0, r.getHttpStatus());
-    }
-
-    @Test
-    void caseInsensitiveTrueFalse() {
-        String json = "{\"url\":\"https://host\","
-                + "\"ping_reachable\":\"TRUE\",\"ping_response_time\":\"9\","
-                + "\"tcp_open\":\"False\",\"tcp_response_time\":\"-1\","
-                + "\"http_status\":\"200\",\"http_reachable\":\"True\","
-                + "\"http_error_msg\":\"\"}";
-
-        EndpointCheckResult r = service.parseCheckResponse("A", "1", null, "https://host", json);
-
-        assertTrue(r.isPingOk());
-        assertFalse(r.isTcpOk());
-        assertTrue(r.isReachable());
-    }
-
-    // --- Constructor guard ---
+    // -----------------------------------------------------------------------
+    // Constructor guard
+    // -----------------------------------------------------------------------
 
     @Test
     void nullConfigThrows() {
@@ -168,7 +169,132 @@ class IsEndpointCheckServiceTest {
                 () -> new IsEndpointCheckService(null));
     }
 
-    // --- check() returns non-null on unreachable IS ---
+    // -----------------------------------------------------------------------
+    // check() — Early-Exit scenarios (via package-private stub subclass)
+    // -----------------------------------------------------------------------
+
+    /**
+     * Stub subclass that overrides the three IS-call methods so no real network
+     * traffic is produced. Each method returns a pre-configured JSON string or
+     * throws an IOException if instructed.
+     */
+    private static class StubIsService extends IsEndpointCheckService {
+
+        private final String pingJson;
+        private final String tcpJson;
+        private final String httpJson;
+
+        // Track which endpoints were actually called
+        boolean pingCalled;
+        boolean tcpCalled;
+        boolean httpCalled;
+
+        StubIsService(String pingJson, String tcpJson, String httpJson) {
+            super(CONFIG);
+            this.pingJson = pingJson;
+            this.tcpJson  = tcpJson;
+            this.httpJson  = httpJson;
+        }
+
+        @Override
+        String callPingEndpoint(String host) throws IOException {
+            pingCalled = true;
+            if (pingJson == null) throw new IOException("IS unreachable");
+            return pingJson;
+        }
+
+        @Override
+        String callTcpEndpoint(String host, int port) throws IOException {
+            tcpCalled = true;
+            if (tcpJson == null) throw new IOException("IS unreachable");
+            return tcpJson;
+        }
+
+        @Override
+        String callHttpEndpoint(String url) throws IOException {
+            httpCalled = true;
+            if (httpJson == null) throw new IOException("IS unreachable");
+            return httpJson;
+        }
+    }
+
+    @Test
+    void checkPingFail_tcpAndHttpNotCalled() {
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"false\",\"response_time\":\"-1\"}",
+                null, null);
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.pingCalled);
+        assertFalse(svc.tcpCalled, "TCP must not be called when ping fails");
+        assertFalse(svc.httpCalled, "HTTP must not be called when ping fails");
+        assertFalse(r.isPingOk());
+        assertFalse(r.isTcpOk());
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+    }
+
+    @Test
+    void checkTcpClosed_httpNotCalled() {
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"false\",\"response_time\":\"-1\"}",
+                null);
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.pingCalled);
+        assertTrue(svc.tcpCalled);
+        assertFalse(svc.httpCalled, "HTTP must not be called when TCP is closed");
+        assertTrue(r.isPingOk());
+        assertFalse(r.isTcpOk());
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+    }
+
+    @Test
+    void checkFullSuccess_allProbesCalled() {
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"12\"}",
+                "{\"open\":\"true\",\"response_time\":\"8\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"200\","
+                        + "\"reachable\":\"true\","
+                        + "\"error_msg\":\"\"}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.pingCalled);
+        assertTrue(svc.tcpCalled);
+        assertTrue(svc.httpCalled);
+        assertTrue(r.isPingOk());
+        assertEquals(12L, r.getPingMs());
+        assertTrue(r.isTcpOk());
+        assertEquals(8L, r.getTcpMs());
+        assertEquals(200, r.getHttpStatus());
+        assertTrue(r.isReachable());
+        assertEquals("API", r.getApiName());
+        assertEquals("v1",  r.getApiVersion());
+    }
+
+    @Test
+    void checkPingIoException_returnsErrorResult() {
+        StubIsService svc = new StubIsService(null, null, null);
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertNotNull(r);
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+        assertTrue(r.getErrorMsg() != null && r.getErrorMsg().contains("IS probe unreachable"));
+        assertFalse(svc.tcpCalled);
+        assertFalse(svc.httpCalled);
+    }
+
+    // -----------------------------------------------------------------------
+    // check() — IS entirely unreachable (real closed port)
+    // -----------------------------------------------------------------------
 
     @Test
     void checkReturnsErrorResultWhenIsUnreachable() {
