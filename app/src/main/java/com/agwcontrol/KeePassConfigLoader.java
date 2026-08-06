@@ -78,25 +78,17 @@ public class KeePassConfigLoader {
             ServerConfig config = new ServerConfig(host, port, entry.getUsername(), entry.getPassword(),
                     isUrl, clusterUrl, clusterCertUrl);
 
-            // The IS probe uses the same URL, username and password as the AGW server entry.
-            // Build an IsEndpointCheckConfig directly from the entry's standard fields.
-            String scheme = parseScheme(url);
-            IsEndpointCheckConfig probeConfig = new IsEndpointCheckConfig(
-                    scheme, host, port, entry.getUsername(), entry.getPassword());
-            config.setIsProbeConfig(probeConfig);
+            // The IS probe uses the IS-URL custom field for its base URL.
+            // Only set an IsEndpointCheckConfig when IS-URL is present.
+            if (isUrl != null) {
+                IsEndpointCheckConfig probeConfig = new IsEndpointCheckConfig(
+                        isUrl, entry.getUsername(), entry.getPassword());
+                config.setIsProbeConfig(probeConfig);
+            }
 
             servers.add(config);
         }
         return servers;
-    }
-
-    private String parseScheme(String url) {
-        try {
-            String scheme = new URI(url).getScheme();
-            return (scheme != null && !scheme.isEmpty()) ? scheme : "http";
-        } catch (URISyntaxException e) {
-            return "http";
-        }
     }
 
     /**

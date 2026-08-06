@@ -1,18 +1,23 @@
 package com.agwcontrol;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+
 /**
  * Connection settings for the remote webMethods Integration Server that
  * performs the connectivity probes (DNS, ping, TCP, HTTP) on behalf of
  * this client.
  *
  * <p>When an instance of this class is supplied to {@link IsEndpointCheckService},
- * all endpoint checks are delegated to the IS REST endpoint
- * {@code GET /rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD/check?url=…}
+ * all endpoint checks are delegated to the IS native Invoke endpoint, e.g.:
+ * <pre>
+ *   GET {IS-URL}/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services/checkAll?url=…
+ * </pre>
  * instead of being executed locally.</p>
  *
- * <p>The IS server is typically the same AGW/IS instance whose APIs are being
- * managed, so it can reach backend endpoints that the local client machine
- * cannot (e.g. internal corporate network segments).</p>
+ * <p>The IS-URL and credentials are read exclusively from the KeePass custom
+ * field {@code IS-URL} and the standard Username/Password fields of the
+ * respective server entry.</p>
  */
 public class IsEndpointCheckConfig {
 
@@ -22,9 +27,9 @@ public class IsEndpointCheckConfig {
     /** Default IS HTTPS port. */
     public static final int DEFAULT_PORT_HTTPS = 5443;
 
-    /** Base path of the REST API Descriptor on IS. */
+    /** Base path of the IS native Invoke endpoint for the checkRAD services. */
     public static final String RAD_BASE_PATH =
-            "/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD";
+            "/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services";
 
     private final String scheme;
     private final String host;
@@ -54,11 +59,40 @@ public class IsEndpointCheckConfig {
     }
 
     /**
-     * Convenience constructor using HTTP and default port 5555.
+     * Creates a configuration from a fully-qualified IS-URL string (e.g.
+     * {@code https://vm40757.linux.oebb.at:5559}). The scheme, host and port
+     * are parsed from {@code isUrl}; username and password come from the
+     * standard KeePass fields of the server entry.
+     *
+     * @param isUrl    Full IS base URL including scheme and port
+     * @param username IS user with Administrators role
+     * @param password Password for the IS user
+     * @throws IllegalArgumentException if {@code isUrl} cannot be parsed or
+     *                                  is missing scheme/host/port
      */
-    public IsEndpointCheckConfig(String host, String username, String password) {
-        this("http", host, DEFAULT_PORT_HTTP, username, password);
+    public IsEndpointCheckConfig(String isUrl, String username, String password) {
+        if (isUrl == null || isUrl.isEmpty()) throw new IllegalArgumentException("isUrl required");
+        try {
+            URI uri = new URI(isUrl);
+            String parsedScheme = uri.getScheme();
+            String parsedHost   = uri.getHost();
+            int    parsedPort   = uri.getPort();
+            if (parsedScheme == null || parsedScheme.isEmpty())
+                throw new IllegalArgumentException("isUrl missing scheme: " + isUrl);
+            if (parsedHost == null || parsedHost.isEmpty())
+                throw new IllegalArgumentException("isUrl missing host: " + isUrl);
+            if (parsedPort <= 0)
+                throw new IllegalArgumentException("isUrl missing or invalid port: " + isUrl);
+            this.scheme   = parsedScheme;
+            this.host     = parsedHost;
+            this.port     = parsedPort;
+            this.username = username;
+            this.password = password;
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("isUrl is not a valid URI: " + isUrl, e);
+        }
     }
+
 
     /** URL scheme: {@code "http"} or {@code "https"}. */
     public String getScheme()   { return scheme; }
@@ -76,8 +110,8 @@ public class IsEndpointCheckConfig {
     public String getPassword() { return password; }
 
     /**
-     * Builds the base URL for the RAD, e.g.
-     * {@code http://localhost:5555/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD}.
+     * Builds the base URL for the IS Invoke endpoint, e.g.
+     * {@code https://vm40757.linux.oebb.at:5559/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services}.
      */
     public String buildBaseUrl() {
         return scheme + "://" + host + ":" + port + RAD_BASE_PATH;

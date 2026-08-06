@@ -13,18 +13,8 @@ info:
     name: Internal use only
 
 servers:
-  - url: '{scheme}://{host}:{port}/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD'
-    description: webMethods Integration Server
-    variables:
-      scheme:
-        default: http
-        description: URL scheme of the Integration Server instance
-      host:
-        default: localhost
-        description: Hostname of the Integration Server instance
-      port:
-        default: "5555"
-        description: HTTPS port of the Integration Server instance
+  - url: '/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services'
+    description: webMethods Integration Server (native Invoke endpoint)
 
 security:
   - basicAuth: []

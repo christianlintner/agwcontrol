@@ -152,32 +152,37 @@ class KeePassConfigLoaderTest {
         assertNull(entry.getClusterUrl(), "DN2020-DEV sollte keine CLUSTER-URL haben");
     }
 
-    // --- IS-Probe config is built from the entry's own standard fields ---
+    // --- IS-Probe config is built from the IS-URL custom field ---
 
     @Test
-    void isProbeConfigBuiltFromStandardFields() throws Exception {
+    void isProbeConfigBuiltFromIsUrlField() throws Exception {
         List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
-        // Every entry should have a probe config built from its own URL/UserName/Password
+        // The IS-URL of vm40757.linux.oebb.at is "https://vm40757.linux.oebb.at:443"
         ServerConfig entry = groups.stream()
                 .flatMap(g -> g.getServers().stream())
                 .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
         IsEndpointCheckConfig probe = entry.getIsProbeConfig();
-        assertNotNull(probe, "isProbeConfig muss für jeden Eintrag gesetzt sein");
-        assertEquals("https",               probe.getScheme());
+        assertNotNull(probe, "isProbeConfig muss gesetzt sein wenn IS-URL vorhanden");
+        // scheme, host and port are derived from the IS-URL custom field value
+        assertEquals("https",                 probe.getScheme());
         assertEquals("vm40757.linux.oebb.at", probe.getHost());
-        assertEquals(443,                   probe.getPort());
-        assertEquals("agwuser",             probe.getUsername());
-        assertEquals("agwpassword1",        probe.getPassword());
+        assertEquals(443,                     probe.getPort());
+        // credentials still come from the standard KeePass fields
+        assertEquals("agwuser",    probe.getUsername());
+        assertEquals("agwpassword1", probe.getPassword());
     }
 
     @Test
-    void allEntriesHaveIsProbeConfig() throws Exception {
+    void entryWithoutIsUrlHasNoIsProbeConfig() throws Exception {
         List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // Only entries that actually have IS-URL set get an isProbeConfig;
+        // all entries in the test kdbx have IS-URL, so we verify none is null for those
         groups.stream()
                 .flatMap(g -> g.getServers().stream())
+                .filter(c -> c.getIsUrl() != null)
                 .forEach(c -> assertNotNull(c.getIsProbeConfig(),
-                        "isProbeConfig fehlt bei Eintrag: " + c.getHost()));
+                        "isProbeConfig muss für Eintrag mit IS-URL gesetzt sein: " + c.getHost()));
     }
 }

@@ -20,26 +20,23 @@ import java.util.regex.Pattern;
 
 /**
  * Delegates all endpoint connectivity checks to a remote webMethods Integration
- * Server instance via the checkRAD REST API Descriptor.
+ * Server instance via the native IS Invoke endpoint.
  *
  * <p>Instead of performing DNS resolution, ICMP ping, TCP connect, and HTTP GET
- * locally on the client machine, this service calls:
+ * locally on the client machine, this service calls the IS Invoke services
+ * from the {@code at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services} package:
  * <pre>
- *   GET {IS-base}/check?url={endpointUrl}
+ *   GET {IS-URL}/invoke/.../resolveHost?url=…
+ *   GET {IS-URL}/invoke/.../checkPing?host=…
+ *   GET {IS-URL}/invoke/.../checkTcp?host=…&amp;port=…
+ *   GET {IS-URL}/invoke/.../checkHttp?url=…
+ *   GET {IS-URL}/invoke/.../checkAll?url=…
  * </pre>
- * The IS server performs all four probes from its own network location and
- * returns a combined JSON response. This is the intended production mode when
- * the client machine cannot directly reach the backend endpoints (e.g. it sits
- * outside the corporate network while the IS instance is inside).</p>
+ * The IS-URL and credentials are read from the KeePass custom field {@code IS-URL}
+ * and standard Username/Password fields (see {@link IsEndpointCheckConfig}).</p>
  *
- * <p>The service implements the same public interface as the local
- * {@link EndpointCheckService} so that call sites in {@link InteractiveMenu}
- * require minimal changes.</p>
- *
- * <p>Authentication uses HTTP Basic Auth with the credentials supplied in
- * {@link IsEndpointCheckConfig}. The IS instance must have the
- * {@code OEBB_Infra_Pro_AGWCheck} package deployed and the calling user must
- * be a member of the {@code Administrators} group.</p>
+ * <p>Authentication uses HTTP Basic Auth. The IS user must be a member of the
+ * {@code Administrators} group.</p>
  */
 public class IsEndpointCheckService {
 
@@ -109,16 +106,113 @@ public class IsEndpointCheckService {
     }
 
     // -----------------------------------------------------------------------
+    // Single-probe public API
+    // -----------------------------------------------------------------------
+
+    /**
+     * Resolves a hostname via DNS on the IS instance.
+     *
+     * @param endpointUrl fully qualified URL whose hostname shall be resolved
+     * @return {@link PingResult} carrying the resolved host; reachable=true when
+     *         resolution succeeded, response_time=-1 (not applicable for DNS)
+     */
+    public PingResult resolveHost(String endpointUrl) {
+        try {
+            String json   = callInvoke("resolveHost", "url=" + encodeQueryParam(endpointUrl));
+            java.util.Map<String, String> f = parseJsonFields(json);
+            String host   = f.getOrDefault("host", endpointUrl);
+            boolean ok    = host != null && !host.isEmpty()
+                            && !f.getOrDefault("resolved_ip", "").isEmpty();
+            return new PingResult(host, ok, -1L);
+        } catch (IOException e) {
+            return new PingResult(endpointUrl, false, -1L);
+        }
+    }
+
+    /**
+     * Tests ICMP reachability via the IS instance.
+     *
+     * @param host hostname or IP to ping
+     * @return {@link PingResult} with reachability and round-trip time
+     */
+    public PingResult checkPing(String host) {
+        try {
+            String json = callInvoke("checkPing", "host=" + encodeQueryParam(host));
+            java.util.Map<String, String> f = parseJsonFields(json);
+            boolean reachable = "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
+            long    ms        = parseLong(f.getOrDefault("response_time", "-1"), -1L);
+            return new PingResult(f.getOrDefault("host", host), reachable, ms);
+        } catch (IOException e) {
+            return new PingResult(host, false, -1L);
+        }
+    }
+
+    /**
+     * Tests TCP connectivity via the IS instance.
+     *
+     * @param host hostname or IP to connect to
+     * @param port TCP port number
+     * @return {@link TcpCheckResult} with open flag and connection time
+     */
+    public TcpCheckResult checkTcp(String host, int port) {
+        try {
+            String query = "host=" + encodeQueryParam(host) + "&port=" + port;
+            String json  = callInvoke("checkTcp", query);
+            java.util.Map<String, String> f = parseJsonFields(json);
+            boolean open = "true".equalsIgnoreCase(f.getOrDefault("open", "false"));
+            long    ms   = parseLong(f.getOrDefault("response_time", "-1"), -1L);
+            return new TcpCheckResult(f.getOrDefault("host", host), port, open, ms);
+        } catch (IOException e) {
+            return new TcpCheckResult(host, port, false, -1L);
+        }
+    }
+
+    /**
+     * Performs an HTTP(S) GET via the IS instance.
+     *
+     * @param endpointUrl URL to request
+     * @return {@link EndpointCheckResult} with HTTP status and reachability;
+     *         ping/TCP fields are set to {@code false}/{@code -1}
+     */
+    public EndpointCheckResult checkHttp(String endpointUrl) {
+        try {
+            String json = callInvoke("checkHttp", "url=" + encodeQueryParam(endpointUrl));
+            java.util.Map<String, String> f = parseJsonFields(json);
+            int     status   = parseInt(f.getOrDefault("http_status", "0"), 0);
+            boolean reachable= "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
+            String  errMsg   = f.getOrDefault("error_msg", "");
+            return new EndpointCheckResult(
+                    null, null, null, f.getOrDefault("url", endpointUrl),
+                    status, reachable, errMsg,
+                    false, -1L, false, -1L);
+        } catch (IOException e) {
+            return new EndpointCheckResult(
+                    null, null, null, endpointUrl,
+                    0, false, "IS probe unreachable: " + e.getMessage(),
+                    false, -1L, false, -1L);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // HTTP call
     // -----------------------------------------------------------------------
 
     /**
-     * Calls {@code GET /check?url={encodedUrl}} on the IS RAD and returns the raw
-     * JSON response body.
+     * Calls {@code GET /checkAll?url={encodedUrl}} on the IS Invoke endpoint
+     * and returns the raw JSON response body.
      */
     private String callCheckEndpoint(String endpointUrl) throws IOException {
-        String encodedUrl = encodeQueryParam(endpointUrl);
-        String fullUrl    = config.buildBaseUrl() + "/check?url=" + encodedUrl;
+        return callInvoke("checkAll", "url=" + encodeQueryParam(endpointUrl));
+    }
+
+    /**
+     * Generic Invoke call: {@code GET {buildBaseUrl()}/{operation}?{queryString}}.
+     *
+     * @param operation   IS service name, e.g. {@code "checkAll"}, {@code "checkPing"}
+     * @param queryString pre-encoded query string, e.g. {@code "url=https%3A%2F%2F..."}
+     */
+    private String callInvoke(String operation, String queryString) throws IOException {
+        String fullUrl = config.buildBaseUrl() + "/" + operation + "?" + queryString;
         URL url = new URL(fullUrl);
 
         HttpURLConnection conn = openConnection(url);
@@ -213,6 +307,20 @@ public class IsEndpointCheckService {
      * }
      * </pre>
      */
+    /**
+     * Parses all {@code "key":"value"} string pairs from a JSON object into a map.
+     * Returns an empty map for null or empty input.
+     */
+    private static java.util.Map<String, String> parseJsonFields(String json) {
+        java.util.Map<String, String> fields = new java.util.HashMap<>();
+        if (json == null || json.isEmpty()) return fields;
+        Matcher m = JSON_STRING.matcher(json);
+        while (m.find()) {
+            fields.put(m.group(1), m.group(2));
+        }
+        return fields;
+    }
+
     EndpointCheckResult parseCheckResponse(String apiName, String apiVersion,
                                            String aliasName, String fallbackUrl,
                                            String json) {
@@ -221,11 +329,7 @@ public class IsEndpointCheckService {
                     "IS returned empty response");
         }
 
-        java.util.Map<String, String> fields = new java.util.HashMap<>();
-        Matcher m = JSON_STRING.matcher(json);
-        while (m.find()) {
-            fields.put(m.group(1), m.group(2));
-        }
+        java.util.Map<String, String> fields = parseJsonFields(json);
 
         String url          = fields.getOrDefault("url",               fallbackUrl);
         String pingReachable= fields.getOrDefault("ping_reachable",    "false");

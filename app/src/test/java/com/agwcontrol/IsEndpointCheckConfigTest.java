@@ -19,11 +19,32 @@ class IsEndpointCheckConfigTest {
     }
 
     @Test
-    void convenienceConstructorDefaultsToHttpAnd5555() {
-        IsEndpointCheckConfig cfg = new IsEndpointCheckConfig("myhost", "user", "pass");
-        assertEquals("http",   cfg.getScheme());
-        assertEquals("myhost", cfg.getHost());
-        assertEquals(5555,     cfg.getPort());
+    void isUrlConstructorParsesSchemeHostPort() {
+        IsEndpointCheckConfig cfg = new IsEndpointCheckConfig(
+                "https://vm40757.linux.oebb.at:5559", "user", "pass");
+        assertEquals("https",                  cfg.getScheme());
+        assertEquals("vm40757.linux.oebb.at",  cfg.getHost());
+        assertEquals(5559,                     cfg.getPort());
+        assertEquals("user",                   cfg.getUsername());
+        assertEquals("pass",                   cfg.getPassword());
+    }
+
+    @Test
+    void isUrlConstructorRejectsNullUrl() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IsEndpointCheckConfig((String) null, "u", "p"));
+    }
+
+    @Test
+    void isUrlConstructorRejectsInvalidUri() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IsEndpointCheckConfig("not a url", "u", "p"));
+    }
+
+    @Test
+    void isUrlConstructorRejectsMissingPort() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new IsEndpointCheckConfig("https://host.example.com", "u", "p"));
     }
 
     @Test
@@ -74,7 +95,7 @@ class IsEndpointCheckConfigTest {
     void buildBaseUrlHttp() {
         IsEndpointCheckConfig cfg = new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
         assertEquals(
-                "http://localhost:5555/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD",
+                "http://localhost:5555/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services",
                 cfg.buildBaseUrl());
     }
 
@@ -82,7 +103,7 @@ class IsEndpointCheckConfigTest {
     void buildBaseUrlHttps() {
         IsEndpointCheckConfig cfg = new IsEndpointCheckConfig("https", "is.corp.at", 5443, "u", "p");
         assertEquals(
-                "https://is.corp.at:5443/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD",
+                "https://is.corp.at:5443/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services",
                 cfg.buildBaseUrl());
     }
 
@@ -114,7 +135,7 @@ class IsEndpointCheckConfigTest {
     @Test
     void radBasePathIsCorrect() {
         assertEquals(
-                "/rest/OEBB_Infra_Pro_AGWControl/at.oebb.infra.pro.agwctl.pub.rs.v1:checkRAD",
+                "/invoke/at.oebb.infra.pro.agwctl.pub.rs.v1.checkRAD_.services",
                 IsEndpointCheckConfig.RAD_BASE_PATH);
     }
 }
