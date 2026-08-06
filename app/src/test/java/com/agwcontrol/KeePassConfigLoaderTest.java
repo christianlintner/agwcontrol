@@ -98,19 +98,22 @@ class KeePassConfigLoaderTest {
     @Test
     void parsesIsUrl() throws Exception {
         List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // vm40205.linux.gleis.at (OH-DEV) hat IS-URL gesetzt
         ServerConfig entry = groups.stream()
                 .flatMap(g -> g.getServers().stream())
-                .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
+                .filter(c -> "vm40205.linux.gleis.at".equals(c.getHost()))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
-        assertEquals("https://vm40757.linux.oebb.at:443", entry.getIsUrl());
+                .orElseThrow(() -> new AssertionError("Eintrag vm40205.linux.gleis.at nicht gefunden"));
+        assertEquals("https://vm40205.linux.gleis.at:443", entry.getIsUrl());
     }
 
     @Test
     void allEntriesHaveIsUrl() throws Exception {
         List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // DN2020-DEV hat keine IS-URL (Fallback-Test-Voraussetzung) – alle anderen schon
         groups.stream()
                 .flatMap(g -> g.getServers().stream())
+                .filter(c -> !"vm40757.linux.oebb.at".equals(c.getHost()))
                 .forEach(c -> assertNotNull(c.getIsUrl(),
                         "IS-URL fehlt bei Eintrag: " + c.getHost()));
     }
@@ -152,24 +155,46 @@ class KeePassConfigLoaderTest {
         assertNull(entry.getClusterUrl(), "DN2020-DEV sollte keine CLUSTER-URL haben");
     }
 
-    // --- IS-Probe config is built from the entry's own standard fields ---
+    // --- IS-Probe config: IS-URL wird verwendet wenn vorhanden, sonst Fallback auf AGW-URL ---
+
+    @Test
+    void isProbeConfigUsesIsUrlWhenPresent() throws Exception {
+        List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
+        // vm40205.linux.gleis.at (OH-DEV) hat IS-URL = https://vm40205.linux.gleis.at:443
+        // → isProbeConfig muss Scheme/Host/Port aus IS-URL verwenden
+        ServerConfig entry = groups.stream()
+                .flatMap(g -> g.getServers().stream())
+                .filter(c -> "vm40205.linux.gleis.at".equals(c.getHost()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Eintrag vm40205.linux.gleis.at nicht gefunden"));
+        assertNotNull(entry.getIsUrl(), "IS-URL muss für diesen Eintrag gesetzt sein");
+        IsEndpointCheckConfig probe = entry.getIsProbeConfig();
+        assertNotNull(probe, "isProbeConfig muss für jeden Eintrag gesetzt sein");
+        assertEquals("https",                  probe.getScheme());
+        assertEquals("vm40205.linux.gleis.at", probe.getHost());
+        assertEquals(443,                      probe.getPort());
+        assertEquals("agwuser",                probe.getUsername());
+        assertEquals("agwpassword2",           probe.getPassword());
+    }
 
     @Test
     void isProbeConfigBuiltFromStandardFields() throws Exception {
         List<ServerGroup> groups = new KeePassConfigLoader().loadGroups(testKdbx(), MASTER_PASSWORD);
-        // Every entry should have a probe config built from its own URL/UserName/Password
+        // vm40757.linux.oebb.at (DN2020-DEV) hat keine IS-URL
+        // → isProbeConfig wird als Fallback aus der AGW-URL gebaut
         ServerConfig entry = groups.stream()
                 .flatMap(g -> g.getServers().stream())
                 .filter(c -> "vm40757.linux.oebb.at".equals(c.getHost()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Eintrag vm40757.linux.oebb.at nicht gefunden"));
+        assertNull(entry.getIsUrl(), "DN2020-DEV darf keine IS-URL haben (Fallback-Test)");
         IsEndpointCheckConfig probe = entry.getIsProbeConfig();
         assertNotNull(probe, "isProbeConfig muss für jeden Eintrag gesetzt sein");
-        assertEquals("https",               probe.getScheme());
-        assertEquals("vm40757.linux.oebb.at", probe.getHost());
-        assertEquals(443,                   probe.getPort());
-        assertEquals("agwuser",             probe.getUsername());
-        assertEquals("agwpassword1",        probe.getPassword());
+        assertEquals("https",                   probe.getScheme());
+        assertEquals("vm40757.linux.oebb.at",   probe.getHost());
+        assertEquals(443,                        probe.getPort());
+        assertEquals("agwuser",                 probe.getUsername());
+        assertEquals("agwpassword1",            probe.getPassword());
     }
 
     @Test

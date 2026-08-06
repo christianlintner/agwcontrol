@@ -25,3 +25,8 @@ agwcontrol.db
 app/report*.csv
 
 /.bob/
+
+# Alte jar-Extrakte (de/slackspace Quellen, Icons, Manifest) – nicht einchecken
+/de/
+/META-INF/
+/icons/
