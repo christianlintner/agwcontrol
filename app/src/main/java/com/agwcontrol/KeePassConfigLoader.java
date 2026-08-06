@@ -75,10 +75,60 @@ public class KeePassConfigLoader {
             String isUrl          = readCustomField(entry, "IS-URL");
             String clusterUrl     = readCustomField(entry, "CLUSTER-URL");
             String clusterCertUrl = readCustomField(entry, "CLUSTER-CERT-URL");
-            servers.add(new ServerConfig(host, port, entry.getUsername(), entry.getPassword(),
-                    isUrl, clusterUrl, clusterCertUrl));
+            ServerConfig config = new ServerConfig(host, port, entry.getUsername(), entry.getPassword(),
+                    isUrl, clusterUrl, clusterCertUrl);
+
+            // Optional IS probe configuration — read from custom fields:
+            //   IS-PROBE-URL      e.g. http://localhost:5555  (scheme + host + port)
+            //   IS-PROBE-USER     IS username (Administrators role required)
+            //   IS-PROBE-PASSWORD IS password
+            IsEndpointCheckConfig probeConfig = buildProbeConfig(entry);
+            if (probeConfig != null) {
+                config.setIsProbeConfig(probeConfig);
+            }
+            servers.add(config);
         }
         return servers;
+    }
+
+    /**
+     * Reads IS-PROBE-URL, IS-PROBE-USER and IS-PROBE-PASSWORD custom fields
+     * from a KeePass entry and builds an {@link IsEndpointCheckConfig} if all
+     * three are present.
+     *
+     * <p>IS-PROBE-URL must include the scheme and port, e.g.
+     * {@code http://is-server:5555} or {@code https://is-server:5443}.</p>
+     *
+     * @return populated config, or {@code null} if any required field is absent
+     */
+    private IsEndpointCheckConfig buildProbeConfig(Entry entry) {
+        String probeUrl  = readCustomField(entry, "IS-PROBE-URL");
+        String probeUser = readCustomField(entry, "IS-PROBE-USER");
+        String probePass = readCustomField(entry, "IS-PROBE-PASSWORD");
+
+        if (probeUrl == null || probeUser == null || probePass == null) {
+            return null;
+        }
+
+        String scheme = parseScheme(probeUrl);
+        String probeHost = parseHost(probeUrl);
+        int    probePort = parsePort(probeUrl);
+
+        if (probeHost == null || probeHost.isEmpty()) {
+            System.err.println("Warnung: IS-PROBE-URL \"" + probeUrl + "\" konnte nicht geparst werden – IS-Probe deaktiviert.");
+            return null;
+        }
+
+        return new IsEndpointCheckConfig(scheme, probeHost, probePort, probeUser, probePass);
+    }
+
+    private String parseScheme(String url) {
+        try {
+            String scheme = new URI(url).getScheme();
+            return (scheme != null && !scheme.isEmpty()) ? scheme : "http";
+        } catch (URISyntaxException e) {
+            return "http";
+        }
     }
 
     /**

@@ -23,8 +23,15 @@ public class InteractiveMenu {
     private final HttpDebugConfig httpDebugConfig = new HttpDebugConfig();
     private final AgwApiService agwApiService = new AgwApiService(httpDebugConfig, outWithFallback());
     private final ApiInfoFormatter apiInfoFormatter = new ApiInfoFormatter();
-    private final EndpointCheckService endpointCheckService = new EndpointCheckService();
+    private final EndpointCheckService localEndpointCheckService = new EndpointCheckService();
     private final EndpointCheckResultFormatter endpointCheckFormatter = new EndpointCheckResultFormatter();
+
+    /**
+     * Global IS probe override set via CLI (--is-probe-url / --is-probe-user /
+     * --is-probe-password). When non-null it takes precedence over per-server
+     * KeePass custom fields.
+     */
+    private IsEndpointCheckConfig globalIsProbeConfig;
 
     private final ApiDatabase apiDatabase;
     private final DbCacheConfig cacheConfig = new DbCacheConfig();
@@ -45,6 +52,15 @@ public class InteractiveMenu {
         } catch (SQLException e) {
             this.out.println("Warnung: Datenbank konnte nicht initialisiert werden: " + e.getMessage());
         }
+    }
+
+    /**
+     * Sets a global IS probe configuration that overrides per-server KeePass
+     * settings. Call this from {@link App} when --is-probe-url is supplied on
+     * the command line.
+     */
+    public void setGlobalIsProbeConfig(IsEndpointCheckConfig config) {
+        this.globalIsProbeConfig = config;
     }
 
     private PrintStream outWithFallback() {
@@ -390,7 +406,23 @@ public class InteractiveMenu {
         }
     }
 
+    /**
+     * Returns the IS probe configuration to use for a given server.
+     * Priority: CLI global override → per-server KeePass custom fields → null (local mode).
+     */
+    private IsEndpointCheckConfig resolveProbeConfig(ServerConfig server) {
+        if (globalIsProbeConfig != null) return globalIsProbeConfig;
+        return server.getIsProbeConfig();
+    }
+
     private void runEndpointCheck(ServerConfig server, ApiSelection sel, String environment) {
+        IsEndpointCheckConfig probeConfig = resolveProbeConfig(server);
+        boolean remote = probeConfig != null;
+
+        if (remote) {
+            out.println(ts() + "IS-Probe aktiv: Checks werden remote ausgeführt via " + probeConfig);
+        }
+
         List<EndpointCheckResult> results = new ArrayList<>();
         for (ApiInfo api : sel.apis) {
             String[] hint = new String[1];
@@ -415,18 +447,38 @@ public class InteractiveMenu {
                     out.println(ts() + "  Alias '" + ep.getAliasName() + "' konnte nicht aufgelöst werden.");
                     continue;
                 }
-                out.println(ts() + "  Prüfe Ping/TCP/HTTP für " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url + " ...");
+                String modeLabel = remote ? " (remote via IS)" : " (lokal)";
+                out.println(ts() + "  Prüfe Ping/TCP/HTTP für "
+                        + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url
+                        + modeLabel + " ...");
                 try {
-                    EndpointCheckResult r = endpointCheckService.check(
-                            api.getName(), api.getVersion(),
-                            ep.isAlias() ? ep.getAliasName() : null,
-                            url,
-                            environment, api.getId(), server.getHost(),
-                            apiDatabase);
+                    EndpointCheckResult r;
+                    if (remote) {
+                        IsEndpointCheckService remoteService = new IsEndpointCheckService(probeConfig);
+                        r = remoteService.check(
+                                api.getName(), api.getVersion(),
+                                ep.isAlias() ? ep.getAliasName() : null,
+                                url,
+                                environment, api.getId(), server.getHost(),
+                                apiDatabase);
+                    } else {
+                        r = localEndpointCheckService.check(
+                                api.getName(), api.getVersion(),
+                                ep.isAlias() ? ep.getAliasName() : null,
+                                url,
+                                environment, api.getId(), server.getHost(),
+                                apiDatabase);
+                    }
                     results.add(r);
                 } catch (java.sql.SQLException e) {
                     out.println(ts() + "  Warnung: Check-Ergebnis konnte nicht gespeichert werden: " + e.getMessage());
-                    EndpointCheckResult r = endpointCheckService.check(api.getName(), api.getVersion(), url);
+                    EndpointCheckResult r;
+                    if (remote) {
+                        r = new IsEndpointCheckService(probeConfig).check(
+                                api.getName(), api.getVersion(), url);
+                    } else {
+                        r = localEndpointCheckService.check(api.getName(), api.getVersion(), url);
+                    }
                     if (ep.isAlias()) {
                         r = new EndpointCheckResult(r.getApiName(), r.getApiVersion(),
                                 ep.getAliasName(), r.getUrl(), r.getHttpStatus(), r.isReachable(), r.getErrorMsg(),

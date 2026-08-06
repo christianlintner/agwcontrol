@@ -10,6 +10,13 @@ public class ServerConfig {
     private final String clusterUrl;
     private final String clusterCertUrl;
 
+    /**
+     * Optional configuration for the remote IS endpoint-probe service.
+     * When non-null, {@link IsEndpointCheckService} is used instead of the
+     * local {@link EndpointCheckService}.
+     */
+    private IsEndpointCheckConfig isProbeConfig;
+
     public ServerConfig(String host, int port) {
         this(host, port, null, null, null, null, null);
     }
@@ -62,5 +69,22 @@ public class ServerConfig {
     /** CLUSTER-CERT-URL: Zentrale Cluster-LB-Adresse (internal_cert). */
     public String getClusterCertUrl() {
         return clusterCertUrl;
+    }
+
+    /**
+     * Returns the IS probe configuration when remote endpoint checking is
+     * configured for this server entry, or {@code null} to use local probing.
+     */
+    public IsEndpointCheckConfig getIsProbeConfig() {
+        return isProbeConfig;
+    }
+
+    /**
+     * Attaches an IS probe configuration to this server entry.
+     * Called by {@link KeePassConfigLoader} when IS-PROBE-URL / IS-PROBE-USER /
+     * IS-PROBE-PASSWORD custom fields are present, or from CLI overrides.
+     */
+    public void setIsProbeConfig(IsEndpointCheckConfig isProbeConfig) {
+        this.isProbeConfig = isProbeConfig;
     }
 }
