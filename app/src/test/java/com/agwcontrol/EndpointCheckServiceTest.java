@@ -138,4 +138,15 @@ class EndpointCheckServiceTest {
         assertFalse(r.isTcpOk());
         assertEquals(-1, r.getTcpMs());
     }
+
+    @Test
+    void reachableWhenTcpOpenButNoHttp() throws Exception {
+        // Server nimmt Verbindung an, schickt aber keine valide HTTP-Antwort (kein "HTTP/" darin)
+        int port = startOneShotServer("");
+        String url = "http://127.0.0.1:" + port + "/test";
+        EndpointCheckResult r = service.check("TcpOnlyAPI", "1.0", url);
+        assertTrue(r.isTcpOk(), "TCP muss offen sein");
+        assertEquals(0, r.getHttpStatus(), "HTTP-Status muss 0 sein (kein valider HTTP-Response)");
+        assertTrue(r.isReachable(), "reachable muss true sein wenn tcp_ok=true, auch ohne HTTP-Status");
+    }
 }

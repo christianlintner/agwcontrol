@@ -94,7 +94,7 @@ public class EndpointCheckService {
             errorMsg = e.getMessage();
         }
         debugMsg("[HTTP-DEBUG] HTTP " + urlStr + " → " + (httpStatus > 0 ? "Status " + httpStatus : "FAIL" + (errorMsg.isEmpty() ? "" : " (" + errorMsg + ")")));
-        boolean reachable = httpStatus > 0;
+        boolean reachable = tcp.isOpen() || httpStatus > 0;
 
         return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
                 httpStatus, reachable, errorMsg,
