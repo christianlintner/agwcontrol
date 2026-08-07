@@ -219,38 +219,45 @@ class IsEndpointCheckServiceTest {
     }
 
     @Test
-    void checkPingFail_tcpAndHttpNotCalled() {
+    void checkPingFail_tcpAndHttpStillCalled() {
         StubIsService svc = new StubIsService(
                 "{\"reachable\":\"false\",\"response_time\":\"-1\"}",
-                null, null);
+                "{\"open\":\"true\",\"response_time\":\"8\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"200\","
+                        + "\"reachable\":\"true\","
+                        + "\"error_msg\":\"\"}");
 
         EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
 
         assertTrue(svc.pingCalled);
-        assertFalse(svc.tcpCalled, "TCP must not be called when ping fails");
-        assertFalse(svc.httpCalled, "HTTP must not be called when ping fails");
+        assertTrue(svc.tcpCalled,  "TCP must still be called even when ping fails");
+        assertTrue(svc.httpCalled, "HTTP must still be called even when ping fails");
         assertFalse(r.isPingOk());
-        assertFalse(r.isTcpOk());
-        assertEquals(0, r.getHttpStatus());
-        assertFalse(r.isReachable());
+        assertTrue(r.isTcpOk());
+        assertEquals(200, r.getHttpStatus());
+        assertTrue(r.isReachable());
     }
 
     @Test
-    void checkTcpClosed_httpNotCalled() {
+    void checkTcpClosed_httpStillCalled() {
         StubIsService svc = new StubIsService(
                 "{\"reachable\":\"true\",\"response_time\":\"5\"}",
                 "{\"open\":\"false\",\"response_time\":\"-1\"}",
-                null);
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"200\","
+                        + "\"reachable\":\"true\","
+                        + "\"error_msg\":\"\"}");
 
         EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
 
         assertTrue(svc.pingCalled);
         assertTrue(svc.tcpCalled);
-        assertFalse(svc.httpCalled, "HTTP must not be called when TCP is closed");
+        assertTrue(svc.httpCalled, "HTTP must still be called even when TCP is closed");
         assertTrue(r.isPingOk());
         assertFalse(r.isTcpOk());
-        assertEquals(0, r.getHttpStatus());
-        assertFalse(r.isReachable());
+        assertEquals(200, r.getHttpStatus());
+        assertTrue(r.isReachable());
     }
 
     @Test
@@ -279,17 +286,18 @@ class IsEndpointCheckServiceTest {
     }
 
     @Test
-    void checkPingIoException_returnsErrorResult() {
+    void checkAllProbesIoException_allCalledResultsInFail() {
         StubIsService svc = new StubIsService(null, null, null);
 
         EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
 
         assertNotNull(r);
+        assertTrue(svc.pingCalled);
+        assertTrue(svc.tcpCalled,  "TCP must still be called even when ping throws IOException");
+        assertTrue(svc.httpCalled, "HTTP must still be called even when TCP throws IOException");
         assertEquals(0, r.getHttpStatus());
         assertFalse(r.isReachable());
         assertTrue(r.getErrorMsg() != null && r.getErrorMsg().contains("IS probe unreachable"));
-        assertFalse(svc.tcpCalled);
-        assertFalse(svc.httpCalled);
     }
 
     // -----------------------------------------------------------------------

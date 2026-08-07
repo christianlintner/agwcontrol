@@ -30,8 +30,8 @@ import java.util.regex.Pattern;
  *   GET {IS-base}/tcp?host={host}&amp;port={port}
  *   GET {IS-base}/http?url={encodedUrl}
  * </pre>
- * This service calls them <em>sequentially</em> with early-exit:
- * if Ping fails, TCP and HTTP are skipped; if TCP is closed, HTTP is skipped.
+ * This service calls all three probes unconditionally so that each check result
+ * is always available regardless of whether an earlier probe failed.
  *
  * <p>Authentication uses HTTP Basic Auth with the credentials supplied in
  * {@link IsEndpointCheckConfig}. The IS instance must have the
@@ -100,16 +100,11 @@ public class IsEndpointCheckService {
             String json = callPingEndpoint(host);
             ping = parsePingResponse(json);
         } catch (IOException e) {
-            return errorResult(apiName, apiVersion, null, urlStr,
-                    "IS probe unreachable: " + e.getMessage());
+            ping = new PingProbeResult(false, -1L);
+            debugMsg("[HTTP-DEBUG] IS PING " + host + " → IS probe unreachable: " + e.getMessage());
         }
         debugMsg("[HTTP-DEBUG] IS PING " + host + " → "
                 + (ping.reachable ? "OK " + ping.responseTimeMs + "ms" : "FAIL"));
-        if (!ping.reachable) {
-            return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
-                    0, false, "Ping fehlgeschlagen",
-                    false, ping.responseTimeMs, false, -1L);
-        }
 
         // 2. TCP
         TcpProbeResult tcp;
@@ -117,16 +112,11 @@ public class IsEndpointCheckService {
             String json = callTcpEndpoint(host, port);
             tcp = parseTcpResponse(json);
         } catch (IOException e) {
-            return errorResult(apiName, apiVersion, null, urlStr,
-                    "IS probe unreachable: " + e.getMessage());
+            tcp = new TcpProbeResult(false, -1L);
+            debugMsg("[HTTP-DEBUG] IS TCP  " + host + ":" + port + " → IS probe unreachable: " + e.getMessage());
         }
         debugMsg("[HTTP-DEBUG] IS TCP  " + host + ":" + port + " → "
                 + (tcp.open ? "OPEN " + tcp.responseTimeMs + "ms" : "CLOSED"));
-        if (!tcp.open) {
-            return new EndpointCheckResult(apiName, apiVersion, null, urlStr,
-                    0, false, "TCP nicht erreichbar",
-                    true, ping.responseTimeMs, false, tcp.responseTimeMs);
-        }
 
         // 3. HTTP
         HttpProbeResult http;
@@ -134,8 +124,8 @@ public class IsEndpointCheckService {
             String json = callHttpEndpoint(urlStr);
             http = parseHttpResponse(json, urlStr);
         } catch (IOException e) {
-            return errorResult(apiName, apiVersion, null, urlStr,
-                    "IS probe unreachable: " + e.getMessage());
+            http = new HttpProbeResult(urlStr, 0, false, "IS probe unreachable: " + e.getMessage());
+            debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → IS probe unreachable: " + e.getMessage());
         }
         debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → "
                 + (http.status > 0 ? "Status " + http.status
@@ -143,7 +133,7 @@ public class IsEndpointCheckService {
 
         return new EndpointCheckResult(apiName, apiVersion, null, http.url,
                 http.status, http.reachable, http.errorMsg,
-                true, ping.responseTimeMs, true, tcp.responseTimeMs);
+                ping.reachable, ping.responseTimeMs, tcp.open, tcp.responseTimeMs);
     }
 
     /**
