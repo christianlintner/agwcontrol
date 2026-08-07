@@ -315,6 +315,24 @@ class IsEndpointCheckServiceTest {
     }
 
     @Test
+    void checkTcpOpenHttpFail_reachableTrue() {
+        // tcp_ok=true, http_status=0 (HTTP nicht erreichbar) → reachable muss true sein
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"false\",\"response_time\":\"-1\"}",
+                "{\"open\":\"true\",\"response_time\":\"5\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"0\","
+                        + "\"reachable\":\"false\","
+                        + "\"error_msg\":\"Connection refused\"}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(r.isTcpOk());
+        assertEquals(0, r.getHttpStatus());
+        assertTrue(r.isReachable(), "reachable muss true sein wenn tcp_ok=true, auch ohne HTTP-Status");
+    }
+
+    @Test
     void checkAllProbesIoException_allCalledResultsInFail() {
         StubIsService svc = new StubIsService(null, null, null);
 

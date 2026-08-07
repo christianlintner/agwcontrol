@@ -71,7 +71,7 @@ Eine API gilt als erreichbar, wenn:
 **Relevant Context:**
 - Betroffene Datei: `app/src/main/java/com/agwcontrol/EndpointCheckService.java`, Zeile 97
 - `tcp` ist bereits als lokale Variable verfügbar (Zeile 81: `TcpCheckResult tcp = tcpService.check(...)`)
-- `IsEndpointCheckService` ist nicht betroffen — dort stammt `reachable` aus dem IS-Probe-JSON (remote Check-Logik, eigenständiges System)
+- **Nachtrag:** `IsEndpointCheckService` war ebenfalls betroffen — dort wurde `http.reachable` direkt übergeben ohne TCP einzubeziehen. Fix in Zeile 134–136.
 
 **Status:** [x] done
 

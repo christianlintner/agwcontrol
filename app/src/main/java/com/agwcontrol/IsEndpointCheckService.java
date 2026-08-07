@@ -131,8 +131,9 @@ public class IsEndpointCheckService {
                 + (http.status > 0 ? "Status " + http.status
                         : "FAIL" + (http.errorMsg.isEmpty() ? "" : " (" + http.errorMsg + ")")));
 
+        boolean reachable = tcp.open || http.reachable;
         return new EndpointCheckResult(apiName, apiVersion, null, http.url,
-                http.status, http.reachable, http.errorMsg,
+                http.status, reachable, http.errorMsg,
                 ping.reachable, ping.responseTimeMs, tcp.open, tcp.responseTimeMs);
     }
 
