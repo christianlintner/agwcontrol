@@ -86,6 +86,18 @@ class ApiDatabaseTest {
         assertFalse(loaded.get(0).isAlias());
         assertEquals("https://backend:8080/svc", loaded.get(0).getResolvedUrl());
         assertNull(loaded.get(0).getAliasName());
+        assertNull(loaded.get(0).getResolvedIp(), "resolvedIp muss null sein wenn nicht gesetzt");
+    }
+
+    @Test
+    void saveAndLoadEndpointWithResolvedIp() throws SQLException {
+        RoutingEndpoint ep = RoutingEndpoint.direct("https://backend:8080/svc");
+        ep.setResolvedIp("10.0.1.42");
+        db.saveEndpoints("PROD", "id-1", List.of(ep));
+
+        List<RoutingEndpoint> loaded = db.loadEndpoints("PROD", "id-1");
+        assertEquals(1, loaded.size());
+        assertEquals("10.0.1.42", loaded.get(0).getResolvedIp());
     }
 
     @Test

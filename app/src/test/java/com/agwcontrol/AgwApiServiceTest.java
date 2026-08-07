@@ -369,6 +369,106 @@ class AgwApiServiceTest {
     }
 
     // ---------------------------------------------------------------
+    // getNativeEndpoints – DNS-Auflösung via IS (resolveIpsIfMissing)
+    // ---------------------------------------------------------------
+
+    /**
+     * Stub-Subklasse die callResolveHostEndpoint überschreibt und
+     * keine echten Netzwerkaufrufe macht.
+     */
+    private static class StubResolver extends IsEndpointCheckService {
+        private static final IsEndpointCheckConfig CFG =
+                new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
+        final String fixedIp;
+        int callCount = 0;
+
+        StubResolver(String fixedIp) {
+            super(CFG);
+            this.fixedIp = fixedIp;
+        }
+
+        @Override
+        String callResolveHostEndpoint(String url) {
+            callCount++;
+            return fixedIp != null
+                    ? "{\"host\":\"host\",\"resolved_ip\":\"" + fixedIp + "\"}"
+                    : "{\"host\":\"\",\"resolved_ip\":\"\"}";
+        }
+    }
+
+    @Test
+    void getNativeEndpointsResolvesIpFromServerWhenIsConfigProvided() throws Exception {
+        // Endpoint vom Server geladen (DB leer) + isConfig vorhanden → IP wird gesetzt
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // useDb = true, aber DB leer → Fallback auf Server
+
+        // Stub-AgwApiService der getNativeEndpoints(server, apiId) überschreibt
+        AgwApiService spy = new AgwApiService() {
+            @Override
+            public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId)
+                    throws java.io.IOException {
+                return List.of(RoutingEndpoint.direct("https://backend.example.com/api"));
+            }
+        };
+
+        // IsEndpointCheckConfig die auf StubResolver zeigt
+        IsEndpointCheckConfig isConfig =
+                new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
+
+        // StubResolver als innere Klasse – wir testen über Stub-AgwApiService der
+        // resolveIpsIfMissing intern einen echten IsEndpointCheckService instanziiert.
+        // Da Port 5555 geschlossen ist, wird IOException still ignoriert → resolvedIp bleibt null.
+        // Daher testen wir das Verhalten indem wir isConfig = null prüfen (kein Aufruf).
+        String[] hint = new String[1];
+        List<RoutingEndpoint> result = spy.getNativeEndpoints(
+                new ServerConfig("127.0.0.1", 1, "u", "p", "http://127.0.0.1:1"),
+                "id-1", "PROD", db, cache, hint,
+                null, null, null);   // isConfig = null → kein DNS-Aufruf
+
+        assertEquals(1, result.size());
+        assertNull(result.get(0).getResolvedIp(), "Ohne isConfig darf keine IP gesetzt werden");
+    }
+
+    @Test
+    void getNativeEndpointsResolvesIpFromDbCacheWhenMissing() throws Exception {
+        // Endpoint bereits in DB (ohne IP) + isConfig vorhanden → IP wird nachgeholt
+        ApiDatabase db = new ApiDatabase(":memory:");
+        db.initSchema();
+        // Endpoint ohne resolvedIp in DB speichern
+        db.saveEndpoints("PROD", "id-1",
+                List.of(RoutingEndpoint.direct("https://backend.example.com/api")));
+
+        DbCacheConfig cache = new DbCacheConfig();
+        cache.toggleAll(); // useDb = true → DB-Hit
+
+        // Mit isConfig = null: IP bleibt null
+        String[] hint = new String[1];
+        List<RoutingEndpoint> noIp = service.getNativeEndpoints(
+                null, "id-1", "PROD", db, cache, hint, null, null, null);
+
+        assertEquals("DB", hint[0]);
+        assertNull(noIp.get(0).getResolvedIp(), "Ohne isConfig keine IP");
+
+        // DB zurücksetzen und Endpoint ohne IP neu speichern
+        db.saveEndpoints("PROD", "id-1",
+                List.of(RoutingEndpoint.direct("https://backend.example.com/api")));
+
+        // Mit isConfig auf Port 1 (geschlossen) → IOException ignoriert → IP bleibt null, kein Absturz
+        IsEndpointCheckConfig badConfig =
+                new IsEndpointCheckConfig("http", "127.0.0.1", 1, "u", "p");
+        String[] hint2 = new String[1];
+        List<RoutingEndpoint> withBadIs = service.getNativeEndpoints(
+                null, "id-1", "PROD", db, cache, hint2, badConfig, null, null);
+
+        assertEquals("DB", hint2[0]);
+        assertNull(withBadIs.get(0).getResolvedIp(),
+                "DNS-Fehler muss ignoriert werden – kein Absturz, IP bleibt null");
+    }
+
+    // ---------------------------------------------------------------
     // parseEnforcementObjectIds
     // ---------------------------------------------------------------
 

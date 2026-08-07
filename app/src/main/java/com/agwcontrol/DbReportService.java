@@ -20,7 +20,7 @@ import java.util.stream.*;
 public class DbReportService {
 
     static final String HEADER =
-        "api_name;api_version;api_type;api_active;alias_name;endpoint_url;" +
+        "api_name;api_version;api_type;api_active;alias_name;endpoint_url;resolved_ip;" +
         "server_host;ping_ok;ping_ms;tcp_ok;tcp_ms;http_status;reachable;error_msg;checked_at";
 
     static final String CROSS_ENV_HEADER_PREFIX =
@@ -108,14 +108,15 @@ public class DbReportService {
             for (RoutingEndpoint ep : endpoints) {
                 String url = ep.getResolvedUrl();
                 String alias = ep.isAlias() ? ep.getAliasName() : null;
+                String resolvedIp = ep.getResolvedIp();
                 List<CheckRow> epChecks = checksByUrl.getOrDefault(url, List.of());
 
                 if (epChecks.isEmpty()) {
                     // Endpoint ohne Check → leere Check-Spalten
-                    sb.append(buildRow(api, alias, url, null));
+                    sb.append(buildRow(api, alias, url, resolvedIp, null));
                 } else {
                     for (CheckRow cr : epChecks) {
-                        sb.append(buildRow(api, alias, url, cr));
+                        sb.append(buildRow(api, alias, url, resolvedIp, cr));
                     }
                 }
             }
@@ -123,15 +124,16 @@ public class DbReportService {
         return sb.toString();
     }
 
-    private String buildRow(ApiInfo api, String alias, String url, CheckRow cr) {
-        // Format: 6 API-Felder + 9 Check-Felder = 15 Felder, getrennt durch 14 Semikola
+    private String buildRow(ApiInfo api, String alias, String url, String resolvedIp, CheckRow cr) {
+        // Format: 7 API/Endpoint-Felder + 9 Check-Felder = 16 Felder, getrennt durch 15 Semikola
         StringBuilder row = new StringBuilder();
         row.append(csvField(api.getName())).append(";");
         row.append(csvField(api.getVersion())).append(";");
         row.append(csvField(api.getType())).append(";");
         row.append(api.isActive()).append(";");
         row.append(csvField(alias)).append(";");
-        row.append(csvField(url));  // kein trailing ";" – Check-Block beginnt mit ";"
+        row.append(csvField(url)).append(";");
+        row.append(csvField(resolvedIp));  // kein trailing ";" – Check-Block beginnt mit ";"
 
         if (cr == null) {
             // 9 leere Check-Felder (Semikola vor jedem Feld)
