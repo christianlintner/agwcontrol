@@ -300,6 +300,11 @@ public class AgwApiService {
                 List<RoutingEndpoint> cached = db.loadEndpoints(environment, apiId);
                 if (!cached.isEmpty()) {
                     if (cacheHint != null) cacheHint[0] = "DB";
+                    // DNS nachholen wenn noch keine IP gespeichert ist
+                    boolean resolved = resolveIpsIfMissing(cached, isConfig, debugConfig, debugStream);
+                    if (resolved) {
+                        try { db.saveEndpoints(environment, apiId, cached); } catch (SQLException ignored) {}
+                    }
                     return cached;
                 }
             } catch (SQLException e) {
@@ -311,29 +316,44 @@ public class AgwApiService {
         }
         List<RoutingEndpoint> result = getNativeEndpoints(server, apiId);
         // DNS-Auflösung via IS-Service resolveHost
-        if (isConfig != null) {
-            IsEndpointCheckService resolver = new IsEndpointCheckService(
-                    isConfig,
-                    debugConfig != null ? debugConfig : new HttpDebugConfig(),
-                    debugStream != null ? debugStream : System.out);
-            for (RoutingEndpoint ep : result) {
-                String url = ep.getResolvedUrl();
-                if (url != null && !url.isEmpty()) {
-                    try {
-                        String json = resolver.callResolveHostEndpoint(url);
-                        ep.setResolvedIp(resolver.parseResolveHostResponse(json));
-                    } catch (java.io.IOException e) {
-                        // DNS-Fehler ignorieren – Listing darf nicht blockiert werden
-                    }
-                }
-            }
-        }
+        resolveIpsIfMissing(result, isConfig, debugConfig, debugStream);
         try {
             db.saveEndpoints(environment, apiId, result);
         } catch (SQLException e) {
             // Speicherfehler ignorieren
         }
         return result;
+    }
+
+    /**
+     * Löst für alle Endpoints in der Liste die IP via IS-Service auf, sofern noch keine IP gesetzt ist.
+     * Gibt {@code true} zurück wenn mindestens eine IP neu aufgelöst wurde (d.h. DB-Update sinnvoll).
+     * DNS-Fehler werden ignoriert.
+     */
+    private boolean resolveIpsIfMissing(List<RoutingEndpoint> endpoints,
+                                         IsEndpointCheckConfig isConfig,
+                                         HttpDebugConfig debugConfig,
+                                         java.io.PrintStream debugStream) {
+        if (isConfig == null) return false;
+        boolean anyResolved = false;
+        IsEndpointCheckService resolver = new IsEndpointCheckService(
+                isConfig,
+                debugConfig != null ? debugConfig : new HttpDebugConfig(),
+                debugStream != null ? debugStream : System.out);
+        for (RoutingEndpoint ep : endpoints) {
+            if (ep.getResolvedIp() != null) continue;  // bereits aufgelöst
+            String url = ep.getResolvedUrl();
+            if (url == null || url.isEmpty()) continue;
+            try {
+                String json = resolver.callResolveHostEndpoint(url);
+                String ip = resolver.parseResolveHostResponse(json);
+                ep.setResolvedIp(ip);
+                if (ip != null) anyResolved = true;
+            } catch (java.io.IOException e) {
+                // DNS-Fehler ignorieren
+            }
+        }
+        return anyResolved;
     }
 
     /** Ruft GET /rest/apigateway/apis auf und gibt die gefundenen APIs zurück. */
