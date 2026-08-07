@@ -90,6 +90,31 @@ class DbReportServiceTest {
         assertEquals("", cols[4]);  // alias_name leer
     }
 
+    @Test
+    void csvResolvedIpPresentWhenSet() throws SQLException {
+        db.saveApis("PROD", List.of(new ApiInfo("id-1", "Api", "1.0", "REST", true)));
+        RoutingEndpoint ep = RoutingEndpoint.direct("https://backend.example.com/api");
+        ep.setResolvedIp("10.0.1.42");
+        db.saveEndpoints("PROD", "id-1", List.of(ep));
+
+        String csv = service.buildCsv("PROD");
+        String dataLine = csv.lines().skip(1).findFirst().orElse("");
+        String[] cols = dataLine.split(";", -1);
+        assertEquals("10.0.1.42", cols[6], "resolved_ip muss in Spalte 6 stehen");
+    }
+
+    @Test
+    void csvResolvedIpEmptyWhenNotSet() throws SQLException {
+        db.saveApis("PROD", List.of(new ApiInfo("id-1", "Api", "1.0", "REST", true)));
+        db.saveEndpoints("PROD", "id-1",
+            List.of(RoutingEndpoint.direct("https://backend.example.com/api")));
+
+        String csv = service.buildCsv("PROD");
+        String dataLine = csv.lines().skip(1).findFirst().orElse("");
+        String[] cols = dataLine.split(";", -1);
+        assertEquals("", cols[6], "resolved_ip muss leer sein wenn nicht gesetzt");
+    }
+
     // ---------------------------------------------------------------
     // buildCsv – Check-Ergebnisse
     // ---------------------------------------------------------------
@@ -102,10 +127,11 @@ class DbReportServiceTest {
 
         String csv = service.buildCsv("PROD");
         String dataLine = csv.lines().skip(1).findFirst().orElse("");
-        // Zeile muss 15 Felder haben (Index 0-14), Check-Spalten (Index 6-14) leer
+        // Zeile muss 16 Felder haben (Index 0-15), Check-Spalten (Index 7-15) leer
         String[] cols = dataLine.split(";", -1);
-        assertEquals(15, cols.length);
-        for (int i = 6; i < 14; i++) {
+        assertEquals(16, cols.length);
+        assertEquals("", cols[6], "resolved_ip muss leer sein");
+        for (int i = 7; i < 15; i++) {
             assertEquals("", cols[i], "Spalte " + i + " muss leer sein");
         }
     }
@@ -124,15 +150,16 @@ class DbReportServiceTest {
         String csv = service.buildCsv("PROD");
         String dataLine = csv.lines().skip(1).findFirst().orElse("");
         String[] cols = dataLine.split(";", -1);
-        assertEquals(15, cols.length);
-        assertEquals("vm30073", cols[6]);   // server_host
-        assertEquals("true",   cols[7]);    // ping_ok
-        assertEquals("12",     cols[8]);    // ping_ms
-        assertEquals("true",   cols[9]);    // tcp_ok
-        assertEquals("8",      cols[10]);   // tcp_ms
-        assertEquals("200",    cols[11]);   // http_status
-        assertEquals("true",   cols[12]);   // reachable
-        assertEquals("",       cols[13]);   // error_msg (null → leer)
+        assertEquals(16, cols.length);
+        assertEquals("",       cols[6]);    // resolved_ip (nicht gesetzt → leer)
+        assertEquals("vm30073", cols[7]);   // server_host
+        assertEquals("true",   cols[8]);    // ping_ok
+        assertEquals("12",     cols[9]);    // ping_ms
+        assertEquals("true",   cols[10]);   // tcp_ok
+        assertEquals("8",      cols[11]);   // tcp_ms
+        assertEquals("200",    cols[12]);   // http_status
+        assertEquals("true",   cols[13]);   // reachable
+        assertEquals("",       cols[14]);   // error_msg (null → leer)
     }
 
     @Test

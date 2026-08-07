@@ -51,10 +51,17 @@ public class ApiDatabase {
                 "  alias_name   TEXT," +
                 "  resolved_url TEXT," +
                 "  is_alias     INTEGER," +
+                "  resolved_ip  TEXT," +
                 "  loaded_at    TEXT NOT NULL," +
                 "  PRIMARY KEY (environment, api_id, alias_name, resolved_url)" +
                 ")"
             );
+            // Idempotente Migration für bestehende DBs ohne resolved_ip-Spalte
+            try {
+                stmt.executeUpdate("ALTER TABLE endpoints ADD COLUMN resolved_ip TEXT");
+            } catch (SQLException ignored) {
+                // Spalte existiert bereits – kein Handlungsbedarf
+            }
             stmt.executeUpdate(
                 "CREATE TABLE IF NOT EXISTS endpoint_check_results (" +
                 "  environment  TEXT NOT NULL," +
@@ -144,8 +151,8 @@ public class ApiDatabase {
                                List<RoutingEndpoint> endpoints) throws SQLException {
         String deleteSql = "DELETE FROM endpoints WHERE environment = ? AND api_id = ?";
         String insertSql = "INSERT INTO endpoints " +
-                           "(environment, api_id, alias_name, resolved_url, is_alias, loaded_at) " +
-                           "VALUES (?, ?, ?, ?, ?, ?)";
+                           "(environment, api_id, alias_name, resolved_url, is_alias, resolved_ip, loaded_at) " +
+                           "VALUES (?, ?, ?, ?, ?, ?, ?)";
         String now = Instant.now().toString();
         Connection conn = connect();
         conn.setAutoCommit(false);
@@ -162,7 +169,8 @@ public class ApiDatabase {
                     ins.setString(3, ep.getAliasName());
                     ins.setString(4, ep.getResolvedUrl());
                     ins.setInt(5, ep.isAlias() ? 1 : 0);
-                    ins.setString(6, now);
+                    ins.setString(6, ep.getResolvedIp());
+                    ins.setString(7, now);
                     ins.addBatch();
                 }
                 ins.executeBatch();
@@ -179,7 +187,7 @@ public class ApiDatabase {
      */
     public List<RoutingEndpoint> loadEndpoints(String environment,
                                                 String apiId) throws SQLException {
-        String sql = "SELECT alias_name, resolved_url, is_alias " +
+        String sql = "SELECT alias_name, resolved_url, is_alias, resolved_ip " +
                      "FROM endpoints WHERE environment = ? AND api_id = ? " +
                      "ORDER BY alias_name, resolved_url";
         List<RoutingEndpoint> result = new ArrayList<>();
@@ -192,12 +200,15 @@ public class ApiDatabase {
                     boolean isAlias = rs.getInt("is_alias") == 1;
                     String aliasName   = rs.getString("alias_name");
                     String resolvedUrl = rs.getString("resolved_url");
+                    RoutingEndpoint ep;
                     if (isAlias) {
-                        result.add(RoutingEndpoint.alias(aliasName, resolvedUrl));
+                        ep = RoutingEndpoint.alias(aliasName, resolvedUrl);
                     } else {
                         String directUrl = resolvedUrl != null ? resolvedUrl : aliasName;
-                        result.add(RoutingEndpoint.direct(directUrl));
+                        ep = RoutingEndpoint.direct(directUrl);
                     }
+                    ep.setResolvedIp(rs.getString("resolved_ip"));
+                    result.add(ep);
                 }
             }
         }

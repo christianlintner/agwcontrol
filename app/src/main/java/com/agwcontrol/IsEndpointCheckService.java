@@ -197,6 +197,15 @@ public class IsEndpointCheckService {
     }
 
     /**
+     * Calls {@code GET /resolveHost?url={encodedUrl}} on the IS RAD and returns the raw JSON body.
+     * Logs the full request URL, HTTP status, and response body when debug is enabled.
+     */
+    String callResolveHostEndpoint(String url) throws IOException {
+        String fullUrl = config.buildBaseUrl() + "/resolveHost?url=" + encodeQueryParam(url);
+        return callIsEndpoint(fullUrl);
+    }
+
+    /**
      * Shared HTTP call: opens a connection to {@code fullUrl}, logs request/status/body,
      * validates the IS response code, and returns the response body.
      */
@@ -358,6 +367,20 @@ public class IsEndpointCheckService {
         boolean reachable= "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
         String  errorMsg = f.getOrDefault("error_msg",    "");
         return new HttpProbeResult(url, status, reachable, errorMsg);
+    }
+
+    /**
+     * Parst den JSON-Body von {@code GET /resolveHost} und gibt die aufgelöste IP zurück.
+     *
+     * <p>Erwartet: {@code {"host":"...","resolved_ip":"..."}}</p>
+     *
+     * @return IP-Adresse oder {@code null} wenn leer, fehlend oder JSON ungültig
+     */
+    String parseResolveHostResponse(String json) {
+        if (json == null || json.isEmpty()) return null;
+        java.util.Map<String, String> f = parseJsonStrings(json);
+        String ip = f.get("resolved_ip");
+        return (ip != null && !ip.isEmpty()) ? ip : null;
     }
 
     private static java.util.Map<String, String> parseJsonStrings(String json) {

@@ -16,6 +16,7 @@ public class RoutingEndpoint {
     private final String aliasName;    // null wenn kein Alias
     private final String resolvedUrl;  // aufgelöste URL (endPointURI oder direkte uri)
     private final boolean isAlias;
+    private String resolvedIp;         // via IS-Service resolveHost aufgelöste IP, null wenn unbekannt
 
     public RoutingEndpoint(String aliasName, String resolvedUrl, boolean isAlias) {
         this.aliasName = aliasName;
@@ -57,5 +58,18 @@ public class RoutingEndpoint {
      */
     public String getDisplayLabel() {
         return isAlias ? aliasName : resolvedUrl;
+    }
+
+    /**
+     * @return Die via IS-Service {@code resolveHost} aufgelöste IP-Adresse,
+     *         oder {@code null} wenn noch nicht aufgelöst oder Auflösung fehlgeschlagen.
+     */
+    public String getResolvedIp() {
+        return resolvedIp;
+    }
+
+    /** Setzt die via IS-Service aufgelöste IP-Adresse. */
+    public void setResolvedIp(String resolvedIp) {
+        this.resolvedIp = resolvedIp;
     }
 }

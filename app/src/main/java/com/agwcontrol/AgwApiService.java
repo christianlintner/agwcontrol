@@ -272,6 +272,29 @@ public class AgwApiService {
                                                      String environment,
                                                      ApiDatabase db, DbCacheConfig cache,
                                                      String[] cacheHint) throws IOException {
+        return getNativeEndpoints(server, apiId, environment, db, cache, cacheHint, null, null, null);
+    }
+
+    /**
+     * Lädt native Endpoints – mit DB-Cache-Unterstützung und optionaler DNS-Auflösung via IS.
+     *
+     * <p>Wenn {@code isConfig} nicht {@code null} ist, wird nach dem Server-Abruf für jeden
+     * Endpoint mit gültiger URL der IS-Service {@code resolveHost} aufgerufen und die
+     * aufgelöste IP via {@link RoutingEndpoint#setResolvedIp(String)} gesetzt.
+     * Debug-Ausgaben erscheinen wenn {@code debugConfig} aktiviert ist.</p>
+     *
+     * @param cacheHint   Optional: String-Array der Länge 1, wird mit Quelle befüllt.
+     * @param isConfig    Optional: IS-Verbindungskonfiguration für DNS-Auflösung. {@code null} = überspringen.
+     * @param debugConfig Optional: HTTP-Debug-Konfiguration, wird an den IS-Service weitergereicht.
+     * @param debugStream Optional: Ausgabe-Stream für Debug-Meldungen.
+     */
+    public List<RoutingEndpoint> getNativeEndpoints(ServerConfig server, String apiId,
+                                                     String environment,
+                                                     ApiDatabase db, DbCacheConfig cache,
+                                                     String[] cacheHint,
+                                                     IsEndpointCheckConfig isConfig,
+                                                     HttpDebugConfig debugConfig,
+                                                     java.io.PrintStream debugStream) throws IOException {
         if (cache.isUseDbForEndpoints()) {
             try {
                 List<RoutingEndpoint> cached = db.loadEndpoints(environment, apiId);
@@ -287,6 +310,24 @@ public class AgwApiService {
             if (cacheHint != null) cacheHint[0] = "Server";
         }
         List<RoutingEndpoint> result = getNativeEndpoints(server, apiId);
+        // DNS-Auflösung via IS-Service resolveHost
+        if (isConfig != null) {
+            IsEndpointCheckService resolver = new IsEndpointCheckService(
+                    isConfig,
+                    debugConfig != null ? debugConfig : new HttpDebugConfig(),
+                    debugStream != null ? debugStream : System.out);
+            for (RoutingEndpoint ep : result) {
+                String url = ep.getResolvedUrl();
+                if (url != null && !url.isEmpty()) {
+                    try {
+                        String json = resolver.callResolveHostEndpoint(url);
+                        ep.setResolvedIp(resolver.parseResolveHostResponse(json));
+                    } catch (java.io.IOException e) {
+                        // DNS-Fehler ignorieren – Listing darf nicht blockiert werden
+                    }
+                }
+            }
+        }
         try {
             db.saveEndpoints(environment, apiId, result);
         } catch (SQLException e) {

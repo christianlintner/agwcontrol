@@ -363,7 +363,8 @@ public class InteractiveMenu {
             List<RoutingEndpoint> endpoints;
             try {
                 endpoints = agwApiService.getNativeEndpoints(
-                        server, api.getId(), environment, apiDatabase, cacheConfig, hint);
+                        server, api.getId(), environment, apiDatabase, cacheConfig, hint,
+                        server.getIsProbeConfig(), httpDebugConfig, out);
                 out.println(" [" + hint[0] + "]");
             } catch (IOException e) {
                 out.println();
@@ -382,7 +383,8 @@ public class InteractiveMenu {
                 }
                 foundAny = true;
                 out.println(ts() + "  " + api.getName() + " " + nullSafe(api.getVersion()).trim()
-                        + ": " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url);
+                        + ": " + (ep.isAlias() ? ep.getAliasName() + " → " : "") + url
+                        + (ep.getResolvedIp() != null ? "  [" + ep.getResolvedIp() + "]" : ""));
             }
         }
         if (!foundAny) {
@@ -415,7 +417,8 @@ public class InteractiveMenu {
             List<RoutingEndpoint> endpoints;
             try {
                 endpoints = agwApiService.getNativeEndpoints(
-                        server, api.getId(), environment, apiDatabase, cacheConfig, hint);
+                        server, api.getId(), environment, apiDatabase, cacheConfig, hint,
+                        server.getIsProbeConfig(), httpDebugConfig, out);
                 out.println(" [" + hint[0] + "]");
             } catch (IOException e) {
                 out.println();

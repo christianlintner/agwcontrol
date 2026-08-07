@@ -160,6 +160,35 @@ class IsEndpointCheckServiceTest {
     }
 
     // -----------------------------------------------------------------------
+    // parseResolveHostResponse
+    // -----------------------------------------------------------------------
+
+    @Test
+    void parseResolveHostResponse_withIp() {
+        // IS /resolveHost response format: {"host":"backend.example.com","resolved_ip":"10.0.1.42"}
+        String json = "{\"host\":\"backend.example.com\",\"resolved_ip\":\"10.0.1.42\"}";
+        assertEquals("10.0.1.42", service.parseResolveHostResponse(json));
+    }
+
+    @Test
+    void parseResolveHostResponse_emptyIp() {
+        String json = "{\"host\":\"\",\"resolved_ip\":\"\"}";
+        assertNull(service.parseResolveHostResponse(json));
+    }
+
+    @Test
+    void parseResolveHostResponse_missingResolvedIpField() {
+        String json = "{\"host\":\"backend.example.com\"}";
+        assertNull(service.parseResolveHostResponse(json));
+    }
+
+    @Test
+    void parseResolveHostResponse_nullOrEmpty() {
+        assertNull(service.parseResolveHostResponse(null));
+        assertNull(service.parseResolveHostResponse(""));
+    }
+
+    // -----------------------------------------------------------------------
     // Constructor guard
     // -----------------------------------------------------------------------
 
