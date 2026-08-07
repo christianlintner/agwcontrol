@@ -197,11 +197,11 @@ public class IsEndpointCheckService {
     }
 
     /**
-     * Calls {@code GET /resolveHost?url={encodedUrl}} on the IS RAD and returns the raw JSON body.
+     * Calls {@code GET /resolve?url={encodedUrl}} on the IS RAD and returns the raw JSON body.
      * Logs the full request URL, HTTP status, and response body when debug is enabled.
      */
     String callResolveHostEndpoint(String url) throws IOException {
-        String fullUrl = config.buildBaseUrl() + "/resolveHost?url=" + encodeQueryParam(url);
+        String fullUrl = config.buildBaseUrl() + "/resolve?url=" + encodeQueryParam(url);
         return callIsEndpoint(fullUrl);
     }
 
