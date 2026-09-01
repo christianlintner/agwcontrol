@@ -376,25 +376,25 @@ class AgwApiServiceTest {
      * Stub-Subklasse die callResolveHostEndpoint überschreibt und
      * keine echten Netzwerkaufrufe macht.
      */
-    private static class StubResolver extends IsEndpointCheckService {
-        private static final IsEndpointCheckConfig CFG =
-                new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
-        final String fixedIp;
-        int callCount = 0;
+    // private static class StubResolver extends IsEndpointCheckService {
+    //     private static final IsEndpointCheckConfig CFG =
+    //             new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
+    //     final String fixedIp;
+    //     int callCount = 0;
 
-        StubResolver(String fixedIp) {
-            super(CFG);
-            this.fixedIp = fixedIp;
-        }
+    //     StubResolver(String fixedIp) {
+    //         super(CFG);
+    //         this.fixedIp = fixedIp;
+    //     }
 
-        @Override
-        String callResolveHostEndpoint(String url) {
-            callCount++;
-            return fixedIp != null
-                    ? "{\"host\":\"host\",\"resolved_ip\":\"" + fixedIp + "\"}"
-                    : "{\"host\":\"\",\"resolved_ip\":\"\"}";
-        }
-    }
+    //     @Override
+    //     String callResolveHostEndpoint(String url) {
+    //         callCount++;
+    //         return fixedIp != null
+    //                 ? "{\"host\":\"host\",\"resolved_ip\":\"" + fixedIp + "\"}"
+    //                 : "{\"host\":\"\",\"resolved_ip\":\"\"}";
+    //     }
+    // }
 
     @Test
     void getNativeEndpointsResolvesIpFromServerWhenIsConfigProvided() throws Exception {
@@ -415,8 +415,8 @@ class AgwApiServiceTest {
         };
 
         // IsEndpointCheckConfig die auf StubResolver zeigt
-        IsEndpointCheckConfig isConfig =
-                new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
+        // IsEndpointCheckConfig isConfig =
+        //         new IsEndpointCheckConfig("http", "localhost", 5555, "u", "p");
 
         // StubResolver als innere Klasse – wir testen über Stub-AgwApiService der
         // resolveIpsIfMissing intern einen echten IsEndpointCheckService instanziiert.
