@@ -14,7 +14,7 @@ agwcontrol.jar
 servers.properties
 
 # KeePass-Datenbank – enthält Credentials, nicht einchecken
-servers.kdbx
+*.kdbx
 
 # macOS Finder Metadaten
 .DS_Store
