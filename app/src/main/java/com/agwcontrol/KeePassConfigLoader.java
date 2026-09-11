@@ -72,11 +72,16 @@ public class KeePassConfigLoader {
                 System.err.println("Warnung: URL \"" + url + "\" in Eintrag \"" + entry.getTitle() + "\" konnte nicht geparst werden – wird übersprungen.");
                 continue;
             }
-            String isUrl          = readCustomField(entry, "IS-URL");
-            String clusterUrl     = readCustomField(entry, "CLUSTER-URL");
-            String clusterCertUrl = readCustomField(entry, "CLUSTER-CERT-URL");
+            String isUrl                 = readCustomField(entry, "IS-URL");
+            String clusterUrl            = readCustomField(entry, "CLUSTER-URL");
+            String clusterCertUrl        = readCustomField(entry, "CLUSTER-CERT-URL");
+            String clusterExternUrl      = readCustomField(entry, "CLUSTER-EXTERN-URL");
+            String clusterExternCertUrl  = readCustomField(entry, "CLUSTER-EXTERN-CERT-URL");
+            String konzernhubCertUrl     = readCustomField(entry, "KONZERNHUB-CERT-URL");
+            String konzernhubExternCertUrl = readCustomField(entry, "KONZERNHUB-EXTERN-CERT-URL");
             ServerConfig config = new ServerConfig(host, port, entry.getUsername(), entry.getPassword(),
-                    isUrl, clusterUrl, clusterCertUrl);
+                    isUrl, clusterUrl, clusterCertUrl, clusterExternUrl, clusterExternCertUrl,
+                    konzernhubCertUrl, konzernhubExternCertUrl);
 
             // Build IsEndpointCheckConfig: wenn IS-URL gesetzt ist, deren Scheme/Host/Port verwenden;
             // fehlt IS-URL, wird als Fallback die AGW-Haupt-URL (scheme, host, port) verwendet.

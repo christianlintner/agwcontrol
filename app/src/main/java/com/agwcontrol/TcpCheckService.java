@@ -57,7 +57,22 @@ public class TcpCheckService {
                 results.add(check(clusterCertHost, clusterCertPort, DEFAULT_TIMEOUT_MS).withLabel("CLUSTER-CERT"));
             }
         }
+        addTcpResult(results, server.getClusterExternUrl(), "CLUSTER-EXTERN");
+        addTcpResult(results, server.getClusterExternCertUrl(), "CLUSTER-EXTERN-CERT");
+        addTcpResult(results, server.getKonzernhubCertUrl(), "KONZERNHUB-CERT");
+        addTcpResult(results, server.getKonzernhubExternCertUrl(), "KONZERNHUB-EXTERN-CERT");
         return results;
+    }
+
+    private void addTcpResult(List<TcpCheckResult> results, String url, String label) {
+        if (url == null) {
+            results.add(TcpCheckResult.notConfigured(label));
+            return;
+        }
+        String host = hostFromUrl(url);
+        results.add(host == null
+                ? TcpCheckResult.notConfigured(label)
+                : check(host, portFromUrl(url), DEFAULT_TIMEOUT_MS).withLabel(label));
     }
 
     static String hostFromUrl(String url) {

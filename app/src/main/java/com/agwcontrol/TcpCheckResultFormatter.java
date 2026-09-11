@@ -25,8 +25,9 @@ public class TcpCheckResultFormatter {
 
         StringBuilder sb = new StringBuilder();
         for (TcpCheckResult r : results) {
-            String hostPort = r.getHost() + ":" + r.getPort();
-            String status   = r.isOpen() ? "OPEN" : "CLOSED";
+            String hostPort = r.isConfigured() ? r.getHost() + ":" + r.getPort() : "-";
+            String status   = !r.isConfigured() ? "nicht konfiguriert"
+                    : r.isOpen() ? "OPEN" : "CLOSED";
             String time     = r.isOpen() ? r.getResponseTimeMs() + "ms" : "-";
 
             if (hasLabels) {

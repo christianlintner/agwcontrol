@@ -48,8 +48,10 @@ class PingServiceTest {
         ServerConfig server = new ServerConfig("127.0.0.1", 443);
         List<PingResult> results = new PingService().pingAll(server);
 
-        assertEquals(1, results.size());
+        assertEquals(5, results.size());
         assertEquals("AGW", results.get(0).getLabel());
+        assertEquals("CLUSTER-EXTERN", results.get(1).getLabel());
+        assertFalse(results.get(1).isConfigured());
         assertEquals("127.0.0.1", results.get(0).getHost());
     }
 
@@ -60,15 +62,23 @@ class PingServiceTest {
                 null, null,
                 "https://127.0.0.1:443",
                 "https://127.0.0.1:443",
+                "https://127.0.0.1:443",
+                "https://127.0.0.1:443",
+                "https://127.0.0.1:443",
+                "https://127.0.0.1:443",
                 "https://127.0.0.1:443"
         );
         List<PingResult> results = new PingService().pingAll(server);
 
-        assertEquals(4, results.size());
+        assertEquals(8, results.size());
         assertEquals("AGW",          results.get(0).getLabel());
         assertEquals("IS",           results.get(1).getLabel());
         assertEquals("CLUSTER",      results.get(2).getLabel());
         assertEquals("CLUSTER-CERT", results.get(3).getLabel());
+        assertEquals("CLUSTER-EXTERN", results.get(4).getLabel());
+        assertEquals("CLUSTER-EXTERN-CERT", results.get(5).getLabel());
+        assertEquals("KONZERNHUB-CERT", results.get(6).getLabel());
+        assertEquals("KONZERNHUB-EXTERN-CERT", results.get(7).getLabel());
     }
 
     @Test
@@ -82,9 +92,13 @@ class PingServiceTest {
         );
         List<PingResult> results = new PingService().pingAll(server);
 
-        assertEquals(2, results.size());
+        assertEquals(6, results.size());
         assertEquals("AGW",     results.get(0).getLabel());
         assertEquals("CLUSTER", results.get(1).getLabel());
+        assertEquals("CLUSTER-EXTERN", results.get(2).getLabel());
+        assertEquals("CLUSTER-EXTERN-CERT", results.get(3).getLabel());
+        assertEquals("KONZERNHUB-CERT", results.get(4).getLabel());
+        assertEquals("KONZERNHUB-EXTERN-CERT", results.get(5).getLabel());
     }
 
     @Test

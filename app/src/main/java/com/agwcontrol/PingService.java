@@ -54,7 +54,22 @@ public class PingService {
                 results.add(ping(clusterCertHost, DEFAULT_TIMEOUT_MS).withLabel("CLUSTER-CERT"));
             }
         }
+        addPingResult(results, server.getClusterExternUrl(), "CLUSTER-EXTERN");
+        addPingResult(results, server.getClusterExternCertUrl(), "CLUSTER-EXTERN-CERT");
+        addPingResult(results, server.getKonzernhubCertUrl(), "KONZERNHUB-CERT");
+        addPingResult(results, server.getKonzernhubExternCertUrl(), "KONZERNHUB-EXTERN-CERT");
         return results;
+    }
+
+    private void addPingResult(List<PingResult> results, String url, String label) {
+        if (url == null) {
+            results.add(PingResult.notConfigured(label));
+            return;
+        }
+        String host = hostFromUrl(url);
+        results.add(host == null
+                ? PingResult.notConfigured(label)
+                : ping(host, DEFAULT_TIMEOUT_MS).withLabel(label));
     }
 
     static String hostFromUrl(String url) {

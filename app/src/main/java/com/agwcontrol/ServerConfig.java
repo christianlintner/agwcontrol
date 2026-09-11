@@ -9,6 +9,10 @@ public class ServerConfig {
     private final String isUrl;
     private final String clusterUrl;
     private final String clusterCertUrl;
+    private final String clusterExternUrl;
+    private final String clusterExternCertUrl;
+    private final String konzernhubCertUrl;
+    private final String konzernhubExternCertUrl;
 
     /**
      * Optional configuration for the remote IS endpoint-probe service.
@@ -18,19 +22,27 @@ public class ServerConfig {
     private IsEndpointCheckConfig isProbeConfig;
 
     public ServerConfig(String host, int port) {
-        this(host, port, null, null, null, null, null);
+        this(host, port, null, null, null, null, null, null, null, null, null);
     }
 
     public ServerConfig(String host, int port, String username, String password) {
-        this(host, port, username, password, null, null, null);
+        this(host, port, username, password, null, null, null, null, null, null, null);
     }
 
     public ServerConfig(String host, int port, String username, String password, String isUrl) {
-        this(host, port, username, password, isUrl, null, null);
+        this(host, port, username, password, isUrl, null, null, null, null, null, null);
     }
 
     public ServerConfig(String host, int port, String username, String password,
                         String isUrl, String clusterUrl, String clusterCertUrl) {
+        this(host, port, username, password, isUrl, clusterUrl, clusterCertUrl,
+                null, null, null, null);
+    }
+
+    public ServerConfig(String host, int port, String username, String password,
+                        String isUrl, String clusterUrl, String clusterCertUrl,
+                        String clusterExternUrl, String clusterExternCertUrl,
+                        String konzernhubCertUrl, String konzernhubExternCertUrl) {
         this.host = host;
         this.port = port;
         this.username = username;
@@ -38,6 +50,10 @@ public class ServerConfig {
         this.isUrl = isUrl;
         this.clusterUrl = clusterUrl;
         this.clusterCertUrl = clusterCertUrl;
+        this.clusterExternUrl = clusterExternUrl;
+        this.clusterExternCertUrl = clusterExternCertUrl;
+        this.konzernhubCertUrl = konzernhubCertUrl;
+        this.konzernhubExternCertUrl = konzernhubExternCertUrl;
     }
 
     public String getHost() {
@@ -69,6 +85,22 @@ public class ServerConfig {
     /** CLUSTER-CERT-URL: Zentrale Cluster-LB-Adresse (internal_cert). */
     public String getClusterCertUrl() {
         return clusterCertUrl;
+    }
+
+    public String getClusterExternUrl() {
+        return clusterExternUrl;
+    }
+
+    public String getClusterExternCertUrl() {
+        return clusterExternCertUrl;
+    }
+
+    public String getKonzernhubCertUrl() {
+        return konzernhubCertUrl;
+    }
+
+    public String getKonzernhubExternCertUrl() {
+        return konzernhubExternCertUrl;
     }
 
     /**

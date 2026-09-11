@@ -25,7 +25,8 @@ public class PingResultFormatter {
 
         StringBuilder sb = new StringBuilder();
         for (PingResult r : results) {
-            String status = r.isReachable() ? "OK" : "UNREACHABLE";
+            String status = !r.isConfigured() ? "nicht konfiguriert"
+                    : r.isReachable() ? "OK" : "UNREACHABLE";
             String time   = r.isReachable() ? r.getResponseTimeMs() + "ms" : "-";
 
             if (hasLabels) {
