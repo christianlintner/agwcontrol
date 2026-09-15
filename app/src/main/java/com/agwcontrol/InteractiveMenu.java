@@ -448,9 +448,12 @@ public class InteractiveMenu {
         }
 
         List<EndpointCheckResult> results = new ArrayList<>();
+        int total = sel.apis.size();
+        int idx = 0;
         for (ApiInfo api : sel.apis) {
+            idx++;
             String[] hint = new String[1];
-            out.print(ts() + "Lade nativen Endpoint für " + api.getName() + " ...");
+            out.print(ts() + "[" + idx + "/" + total + "] Lade nativen Endpoint für " + api.getName() + " ...");
             List<RoutingEndpoint> endpoints;
             try {
                 endpoints = agwApiService.getNativeEndpoints(
