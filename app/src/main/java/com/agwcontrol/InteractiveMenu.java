@@ -9,12 +9,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
 
 public class InteractiveMenu {
 
     private final List<ServerGroup> groups;
     private final Scanner scanner;
     private final PrintStream out;
+    private final Set<String> apiFilterNames;
 
     private final PingService pingService = new PingService();
     private final PingResultFormatter pingFormatter = new PingResultFormatter();
@@ -32,13 +34,18 @@ public class InteractiveMenu {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out) {
-        this(groups, in, out, "agwcontrol.db");
+        this(groups, in, out, "agwcontrol.db", Set.of());
     }
 
     public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out, String dbPath) {
+        this(groups, in, out, dbPath, Set.of());
+    }
+
+    public InteractiveMenu(List<ServerGroup> groups, InputStream in, PrintStream out, String dbPath, Set<String> apiFilterNames) {
         this.groups = groups;
         this.scanner = new Scanner(in);
         this.out = out;
+        this.apiFilterNames = apiFilterNames != null ? apiFilterNames : Set.of();
         this.localEndpointCheckService = new EndpointCheckService(httpDebugConfig, out != null ? out : System.out);
         this.apiDatabase = new ApiDatabase(dbPath);
         try {
@@ -279,6 +286,20 @@ public class InteractiveMenu {
         if (apis.isEmpty()) {
             out.println("Keine APIs gefunden.");
             return null;
+        }
+        if (!apiFilterNames.isEmpty()) {
+            List<ApiInfo> filtered = new ArrayList<>();
+            for (ApiInfo a : apis) {
+                if (apiFilterNames.contains(a.getName().toLowerCase())) {
+                    filtered.add(a);
+                }
+            }
+            if (filtered.isEmpty()) {
+                out.println("Kein API aus dem Filter gefunden. Gefilterter API-Name(n): " + apiFilterNames);
+                return null;
+            }
+            out.println("API-Filter aktiv: " + filtered.size() + " von " + apis.size() + " APIs ausgewählt.");
+            return new ApiSelection(filtered, false);
         }
         return selectApisFromLoadedList(server, apis, true, false);
     }

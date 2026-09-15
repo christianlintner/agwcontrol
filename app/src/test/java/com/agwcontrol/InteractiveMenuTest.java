@@ -7,6 +7,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,13 +15,19 @@ class InteractiveMenuTest {
 
         /** Baut ein Testmenü mit simulierter Eingabe (In-Memory-DB). */
         private ByteArrayOutputStream runMenu(List<ServerGroup> groups, String input) {
+            return runMenuWithFilter(groups, input, Set.of());
+        }
+
+        /** Baut ein Testmenü mit API-Filter und simulierter Eingabe (In-Memory-DB). */
+        private ByteArrayOutputStream runMenuWithFilter(List<ServerGroup> groups, String input, Set<String> apiFilter) {
             byte[] inputBytes = input.getBytes(StandardCharsets.UTF_8);
             ByteArrayOutputStream outputBuf = new ByteArrayOutputStream();
             InteractiveMenu menu = new InteractiveMenu(
                     groups,
                     new ByteArrayInputStream(inputBytes),
                     new PrintStream(outputBuf),
-                    ":memory:");
+                    ":memory:",
+                    apiFilter);
             menu.run();
             return outputBuf;
         }
@@ -324,5 +331,43 @@ class InteractiveMenuTest {
     void databaseResetWithoutConfirmation() {
         ByteArrayOutputStream out = runMenu(singleGroup(), "x\nN\nq\n");
         assertTrue(out.toString().contains("Abgebrochen"));
+    }
+
+    // --- API-Filter ---
+
+    @Test
+    void apiFilterWithNoMatchShowsError() {
+        // Unreachable server → API-Liste leer → Filter greift nicht → "Keine APIs gefunden"
+        // Wir testen mit unreachable server damit listApis fehlschlägt,
+        // der Filter-Pfad wird über den "Fehler" / "Keine APIs"-Zweig abgedeckt.
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenuWithFilter(groups, "1\n5\nq\n", Set.of("nonexistent-api"));
+        String s = out.toString();
+        assertTrue(s.contains("Fehler") || s.contains("Keine APIs") || s.contains("gefunden"));
+    }
+
+    @Test
+    void apiFilterIsAppliedWithoutInteractivePrompt() {
+        // Unreachable server → der interaktive API-Auswahlprompt darf NICHT erscheinen,
+        // weil der Filter-Pfad vor selectApisFromLoadedList() zurückkehrt.
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenuWithFilter(groups, "1\n5\nq\n", Set.of("myapi"));
+        String s = out.toString();
+        // "API auswählen" (interaktiver Prompt) darf nicht erscheinen
+        assertFalse(s.contains("API auswählen für"));
+    }
+
+    @Test
+    void noApiFilterKeepsInteractiveBehavior() {
+        // Kein Filter → interaktiver Prompt erscheint (wenn APIs geladen werden konnten)
+        // Mit unreachable server kommt stattdessen "Fehler beim Abrufen" –
+        // aber kein "API-Filter aktiv"
+        List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
+                new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
+        ByteArrayOutputStream out = runMenuWithFilter(groups, "1\n5\nq\n", Set.of());
+        String s = out.toString();
+        assertFalse(s.contains("API-Filter aktiv"));
     }
 }

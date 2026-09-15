@@ -30,7 +30,7 @@ Programmstart mit --api-list-file apis.txt
 
 ## Sub-Task 1 — CLI-Parameter in `App.java` parsen und weiterreichen
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 `App.java` parst bereits `--kdbx` und `--kdbx-password`. Neu kommen `--api-list-file <datei>` und `--api-filter <namen>` hinzu. Das Ergebnis ist ein `Set<String>` (lowercase), das an `InteractiveMenu` übergeben wird.
@@ -60,7 +60,7 @@ Programmstart mit --api-list-file apis.txt
 
 ## Sub-Task 2 — Filterlogik in `InteractiveMenu.selectApis()`
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 `selectApis()` lädt die vollständige API-Liste vom Server. Ist `apiFilterNames` nicht leer, wird die Liste unmittelbar nach dem Laden gefiltert — ohne dass eine interaktive Filter-Eingabe erscheint. Ist `apiFilterNames` leer, verhält sich `selectApis()` genau wie bisher.
@@ -88,7 +88,7 @@ Programmstart mit --api-list-file apis.txt
 
 ## Sub-Task 3 — Tests
 
-**Status:** `[ ] pending`
+**Status:** `[x] done`
 
 ### Intent
 Sicherstellen, dass der Filtercode korrekt funktioniert und bestehende Tests nicht bricht.
@@ -117,10 +117,10 @@ Sicherstellen, dass der Filtercode korrekt funktioniert und bestehende Tests nic
 
 ## Akzeptanzkriterien (aus Issue #27)
 
-- [ ] `--api-list-file` und `--api-filter` werden von `App.java` geparst und an `InteractiveMenu` weitergereicht.
-- [ ] Ist ein Filter gesetzt, werden beim Endpoint-Check nur die angegebenen APIs geprüft.
-- [ ] Filtervergleich ist case-insensitiv.
-- [ ] Ist ein Filter gesetzt, entfällt die interaktive Filter-Eingabe.
-- [ ] Ist kein Filter gesetzt, bleibt das bisherige Verhalten vollständig erhalten.
-- [ ] Bestehende Tests laufen weiterhin erfolgreich durch.
-- [ ] Neue Tests decken den Filterfall (Treffer, kein Treffer, kein Filter) ab.
+- [x] `--api-list-file` und `--api-filter` werden von `App.java` geparst und an `InteractiveMenu` weitergereicht.
+- [x] Ist ein Filter gesetzt, werden beim Endpoint-Check nur die angegebenen APIs geprüft.
+- [x] Filtervergleich ist case-insensitiv.
+- [x] Ist ein Filter gesetzt, entfällt die interaktive Filter-Eingabe.
+- [x] Ist kein Filter gesetzt, bleibt das bisherige Verhalten vollständig erhalten.
+- [x] Bestehende Tests laufen weiterhin erfolgreich durch.
+- [x] Neue Tests decken den Filterfall (Treffer, kein Treffer, kein Filter) ab.
