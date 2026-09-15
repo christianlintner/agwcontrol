@@ -514,8 +514,18 @@ public class InteractiveMenu {
             }
         }
         // Nicht gefundene APIs aus dem Filter als NOT-FOUND-Einträge ergänzen
+        // und in die DB speichern damit sie auch im Report erscheinen
         for (String name : sel.notFoundNames) {
-            results.add(new EndpointCheckResult(name, null, null, 0, false, "NOT FOUND"));
+            EndpointCheckResult notFound = new EndpointCheckResult(name, null, "-", 0, false, "NOT FOUND");
+            results.add(notFound);
+            try {
+                String syntheticId = "NOT_FOUND:" + name;
+                apiDatabase.saveApis(environment,
+                        List.of(new ApiInfo(syntheticId, name, null, null, false)));
+                apiDatabase.saveCheckResult(environment, syntheticId, server.getHost(), notFound);
+            } catch (java.sql.SQLException e) {
+                out.println(ts() + "  Warnung: NOT-FOUND-Eintrag für '" + name + "' konnte nicht gespeichert werden: " + e.getMessage());
+            }
         }
         out.println();
         if (results.isEmpty()) {
