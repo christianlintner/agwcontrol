@@ -337,14 +337,24 @@ class InteractiveMenuTest {
 
     @Test
     void apiFilterWithNoMatchShowsError() {
-        // Unreachable server → API-Liste leer → Filter greift nicht → "Keine APIs gefunden"
-        // Wir testen mit unreachable server damit listApis fehlschlägt,
-        // der Filter-Pfad wird über den "Fehler" / "Keine APIs"-Zweig abgedeckt.
+        // Unreachable server → listApis schlägt fehl → "Fehler" erscheint
         List<ServerGroup> groups = List.of(new ServerGroup("TEST", List.of(
                 new ServerConfig("127.0.0.1", 1, "user", "pass", "http://127.0.0.1:1"))));
         ByteArrayOutputStream out = runMenuWithFilter(groups, "1\n5\nq\n", Set.of("nonexistent-api"));
         String s = out.toString();
         assertTrue(s.contains("Fehler") || s.contains("Keine APIs") || s.contains("gefunden"));
+    }
+
+    @Test
+    void apiFilterNotFoundNamesAppearsInFormatterOutput() {
+        // EndpointCheckResultFormatter muss NOT FOUND-Einträge ausgeben können
+        EndpointCheckResultFormatter fmt = new EndpointCheckResultFormatter();
+        List<EndpointCheckResult> results = List.of(
+                new EndpointCheckResult("missing-api", null, null, 0, false, "NOT FOUND")
+        );
+        String output = fmt.format("testserver", results);
+        assertTrue(output.contains("missing-api"));
+        assertTrue(output.contains("NOT FOUND"));
     }
 
     @Test
