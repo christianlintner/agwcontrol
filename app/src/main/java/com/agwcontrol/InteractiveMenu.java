@@ -263,10 +263,16 @@ public class InteractiveMenu {
     private static final class ApiSelection {
         final List<ApiInfo> apis;
         final boolean showListAgain;
+        final List<String> notFoundNames;
 
         ApiSelection(List<ApiInfo> apis, boolean showListAgain) {
+            this(apis, showListAgain, List.of());
+        }
+
+        ApiSelection(List<ApiInfo> apis, boolean showListAgain, List<String> notFoundNames) {
             this.apis = apis;
             this.showListAgain = showListAgain;
+            this.notFoundNames = notFoundNames;
         }
     }
 
@@ -294,12 +300,22 @@ public class InteractiveMenu {
                     filtered.add(a);
                 }
             }
+            // Namen aus dem Filter, die am Server nicht vorhanden sind
+            List<String> notFound = new ArrayList<>();
+            for (String filterName : apiFilterNames) {
+                boolean found = filtered.stream().anyMatch(a -> a.getName().toLowerCase().equals(filterName));
+                if (!found) {
+                    notFound.add(filterName);
+                }
+            }
+            if (!notFound.isEmpty()) {
+                out.println("Warnung: " + notFound.size() + " API(s) aus dem Filter nicht gefunden: " + notFound);
+            }
             if (filtered.isEmpty()) {
-                out.println("Kein API aus dem Filter gefunden. Gefilterter API-Name(n): " + apiFilterNames);
                 return null;
             }
             out.println("API-Filter aktiv: " + filtered.size() + " von " + apis.size() + " APIs ausgewählt.");
-            return new ApiSelection(filtered, false);
+            return new ApiSelection(filtered, false, notFound);
         }
         return selectApisFromLoadedList(server, apis, true, false);
     }
@@ -496,6 +512,10 @@ public class InteractiveMenu {
                     results.add(r);
                 }
             }
+        }
+        // Nicht gefundene APIs aus dem Filter als NOT-FOUND-Einträge ergänzen
+        for (String name : sel.notFoundNames) {
+            results.add(new EndpointCheckResult(name, null, null, 0, false, "NOT FOUND"));
         }
         out.println();
         if (results.isEmpty()) {
