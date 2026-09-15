@@ -350,7 +350,7 @@ class InteractiveMenuTest {
         // EndpointCheckResultFormatter muss NOT FOUND-Einträge ausgeben können
         EndpointCheckResultFormatter fmt = new EndpointCheckResultFormatter();
         List<EndpointCheckResult> results = List.of(
-                new EndpointCheckResult("missing-api", null, null, 0, false, "NOT FOUND")
+                new EndpointCheckResult("missing-api", null, "-", 0, false, "NOT FOUND")
         );
         String output = fmt.format("testserver", results);
         assertTrue(output.contains("missing-api"));
