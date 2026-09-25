@@ -212,17 +212,24 @@ class IsEndpointCheckServiceTest {
         private final String pingJson;
         private final String tcpJson;
         private final String httpJson;
+        private final String pubClientHttpJson;
 
         // Track which endpoints were actually called
         boolean pingCalled;
         boolean tcpCalled;
         boolean httpCalled;
+        boolean pubClientHttpCalled;
 
         StubIsService(String pingJson, String tcpJson, String httpJson) {
+            this(pingJson, tcpJson, httpJson, null);
+        }
+
+        StubIsService(String pingJson, String tcpJson, String httpJson, String pubClientHttpJson) {
             super(CONFIG);
-            this.pingJson = pingJson;
-            this.tcpJson  = tcpJson;
-            this.httpJson  = httpJson;
+            this.pingJson          = pingJson;
+            this.tcpJson           = tcpJson;
+            this.httpJson          = httpJson;
+            this.pubClientHttpJson = pubClientHttpJson;
         }
 
         @Override
@@ -244,6 +251,13 @@ class IsEndpointCheckServiceTest {
             httpCalled = true;
             if (httpJson == null) throw new IOException("IS unreachable");
             return httpJson;
+        }
+
+        @Override
+        String callPubClientHttp(String url) throws IOException {
+            pubClientHttpCalled = true;
+            if (pubClientHttpJson == null) throw new IOException("pub.client:http unreachable");
+            return pubClientHttpJson;
         }
     }
 
@@ -345,6 +359,189 @@ class IsEndpointCheckServiceTest {
         assertEquals(0, r.getHttpStatus());
         assertFalse(r.isReachable());
         assertTrue(r.getErrorMsg() != null && r.getErrorMsg().contains("IS probe unreachable"));
+    }
+
+    // -----------------------------------------------------------------------
+    // check() — HTTP Fallback via /invoke/pub.client:http
+    // -----------------------------------------------------------------------
+
+    @Test
+    void checkHttpFail_fallbackSucceeds_reachableTrue() {
+        // primärer checkHttp-Flow liefert reachable=false → Fallback via pub.client:http liefert status 200
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"true\",\"response_time\":\"8\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"0\","
+                        + "\"reachable\":\"false\","
+                        + "\"error_msg\":\"PKIX path building failed\"}",
+                "{\"url\":\"https://host.example.com/path\",\"method\":\"GET\","
+                        + "\"header\":{\"status\":\"200\",\"statusMessage\":\"OK\"}}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.httpCalled,          "primary HTTP must be called");
+        assertTrue(svc.pubClientHttpCalled, "fallback pub.client:http must be called");
+        assertEquals(200, r.getHttpStatus());
+        assertTrue(r.isReachable());
+        assertEquals("", r.getErrorMsg());
+    }
+
+    @Test
+    void checkHttpFail_fallbackAlsoFails_errorMsgContainsBoth() {
+        // primärer checkHttp-Flow liefert reachable=false, Fallback liefert ebenfalls reachable=false
+        // TCP closed, damit HTTP allein den reachable-Status bestimmt
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"false\",\"response_time\":\"-1\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"0\","
+                        + "\"reachable\":\"false\","
+                        + "\"error_msg\":\"PKIX path building failed\"}",
+                "{\"url\":\"https://host.example.com/path\",\"method\":\"GET\","
+                        + "\"header\":{\"status\":\"0\",\"statusMessage\":\"Connection refused\"}}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.pubClientHttpCalled);
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+        assertNotNull(r.getErrorMsg());
+        assertTrue(r.getErrorMsg().contains("primary:"),   "errorMsg must contain primary error");
+        assertTrue(r.getErrorMsg().contains("fallback:"),  "errorMsg must contain fallback error");
+        assertTrue(r.getErrorMsg().contains("PKIX"),       "primary error detail must be present");
+        assertTrue(r.getErrorMsg().contains("Connection refused"), "fallback error detail must be present");
+    }
+
+    @Test
+    void checkHttpFail_fallbackIoException_errorMsgContainsBoth() {
+        // primärer checkHttp-Flow liefert reachable=false, Fallback wirft IOException
+        // TCP closed, damit HTTP allein den reachable-Status bestimmt
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"false\",\"response_time\":\"-1\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"0\","
+                        + "\"reachable\":\"false\","
+                        + "\"error_msg\":\"PKIX path building failed\"}",
+                null); // null → IOException im Fallback
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.pubClientHttpCalled);
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+        assertTrue(r.getErrorMsg().contains("primary:"),  "errorMsg must contain primary error");
+        assertTrue(r.getErrorMsg().contains("fallback:"), "errorMsg must contain fallback error");
+    }
+
+    @Test
+    void checkHttpIoException_fallbackNotCalled() {
+        // primärer callHttpEndpoint wirft IOException → IS war nicht erreichbar → kein Fallback
+        // TCP closed, damit HTTP allein den reachable-Status bestimmt
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"false\",\"response_time\":\"-1\"}",
+                null, // null → IOException beim primären HTTP-Aufruf
+                "{\"url\":\"https://host.example.com/path\",\"method\":\"GET\","
+                        + "\"header\":{\"status\":\"200\",\"statusMessage\":\"OK\"}}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertTrue(svc.httpCalled);
+        assertFalse(svc.pubClientHttpCalled, "fallback must NOT be called when primary throws IOException");
+        assertEquals(0, r.getHttpStatus());
+        assertFalse(r.isReachable());
+    }
+
+    @Test
+    void checkHttpSuccess_fallbackNotCalled() {
+        // primärer checkHttp-Flow erfolgreich → kein Fallback nötig
+        StubIsService svc = new StubIsService(
+                "{\"reachable\":\"true\",\"response_time\":\"5\"}",
+                "{\"open\":\"true\",\"response_time\":\"8\"}",
+                "{\"url\":\"https://host.example.com/path\","
+                        + "\"http_status\":\"200\","
+                        + "\"reachable\":\"true\","
+                        + "\"error_msg\":\"\"}",
+                "{\"url\":\"https://host.example.com/path\",\"method\":\"GET\","
+                        + "\"header\":{\"status\":\"999\",\"statusMessage\":\"ShouldNotBeCalled\"}}");
+
+        EndpointCheckResult r = svc.check("API", "v1", "https://host.example.com/path");
+
+        assertFalse(svc.pubClientHttpCalled, "fallback must NOT be called when primary succeeds");
+        assertEquals(200, r.getHttpStatus());
+        assertTrue(r.isReachable());
+    }
+
+    // -----------------------------------------------------------------------
+    // parsePubClientHttpResponse
+    // -----------------------------------------------------------------------
+
+    @Test
+    void parsePubClientHttpResponse_status200() {
+        // echte IS-Response-Struktur: status liegt unter header{…}
+        String json = "{\"url\":\"https://host.example.com/path\",\"method\":\"GET\","
+                + "\"header\":{\"status\":\"200\",\"statusMessage\":\"OK\"}}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://host.example.com/path");
+        assertEquals(200, r.status);
+        assertTrue(r.reachable);
+        assertEquals("", r.errorMsg);
+    }
+
+    @Test
+    void parsePubClientHttpResponse_status401_reachableTrue() {
+        // Jeder HTTP-Status > 0 bedeutet reachable=true
+        String json = "{\"url\":\"https://host.example.com\",\"method\":\"GET\","
+                + "\"header\":{\"status\":\"401\",\"statusMessage\":\"Unauthorized\"}}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://host.example.com");
+        assertEquals(401, r.status);
+        assertTrue(r.reachable);
+    }
+
+    @Test
+    void parsePubClientHttpResponse_status0_reachableFalse() {
+        String json = "{\"url\":\"https://host.example.com\",\"method\":\"GET\","
+                + "\"header\":{\"status\":\"0\",\"statusMessage\":\"Connection refused\"}}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://host.example.com");
+        assertEquals(0, r.status);
+        assertFalse(r.reachable);
+        assertTrue(r.errorMsg.contains("Connection refused"));
+    }
+
+    @Test
+    void parsePubClientHttpResponse_noHeaderBlock_fallsBackToFlatParse() {
+        // Wenn kein header{}-Block vorhanden ist, wird flach geparst (Fallback)
+        String json = "{\"status\":\"200\",\"statusMessage\":\"OK\"}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://host.example.com");
+        assertEquals(200, r.status);
+        assertTrue(r.reachable);
+    }
+
+    @Test
+    void parsePubClientHttpResponse_nullOrEmpty_returnsFail() {
+        IsEndpointCheckService.HttpProbeResult rNull =
+                service.parsePubClientHttpResponse(null, "https://host.example.com");
+        IsEndpointCheckService.HttpProbeResult rEmpty =
+                service.parsePubClientHttpResponse("", "https://host.example.com");
+        assertFalse(rNull.reachable);
+        assertFalse(rEmpty.reachable);
+        assertFalse(rNull.errorMsg.isEmpty());
+        assertFalse(rEmpty.errorMsg.isEmpty());
+    }
+
+    @Test
+    void parsePubClientHttpResponse_missingStatusDefaultsToZero() {
+        String json = "{\"url\":\"https://host.example.com\",\"method\":\"GET\","
+                + "\"header\":{\"statusMessage\":\"Unknown\"}}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://host.example.com");
+        assertEquals(0, r.status);
+        assertFalse(r.reachable);
     }
 
     // -----------------------------------------------------------------------

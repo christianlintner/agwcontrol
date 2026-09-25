@@ -46,6 +46,10 @@ public class IsEndpointCheckService {
     private static final Pattern JSON_STRING =
             Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"");
 
+    /** Matches the value of a top-level {@code "header":{…}} object in a JSON string. */
+    private static final Pattern JSON_HEADER_BLOCK =
+            Pattern.compile("\"header\"\\s*:\\s*\\{([^}]*)\\}");
+
     private final IsEndpointCheckConfig config;
     private final HttpDebugConfig httpDebugConfig;
     private final PrintStream debugStream;
@@ -118,18 +122,45 @@ public class IsEndpointCheckService {
         debugMsg("[HTTP-DEBUG] IS TCP  " + host + ":" + port + " → "
                 + (tcp.open ? "OPEN " + tcp.responseTimeMs + "ms" : "CLOSED"));
 
-        // 3. HTTP
+        // 3. HTTP — primärer IS-Aufruf via checkHttp-Flow
         HttpProbeResult http;
+        String primaryHttpError = null;
         try {
             String json = callHttpEndpoint(urlStr);
             http = parseHttpResponse(json, urlStr);
         } catch (IOException e) {
-            http = new HttpProbeResult(urlStr, 0, false, "IS probe unreachable: " + e.getMessage());
-            debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → IS probe unreachable: " + e.getMessage());
+            primaryHttpError = "IS probe unreachable: " + e.getMessage();
+            http = new HttpProbeResult(urlStr, 0, false, primaryHttpError);
+            debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → " + primaryHttpError);
         }
         debugMsg("[HTTP-DEBUG] IS HTTP " + urlStr + " → "
                 + (http.status > 0 ? "Status " + http.status
                         : "FAIL" + (http.errorMsg.isEmpty() ? "" : " (" + http.errorMsg + ")")));
+
+        // Fallback: direkte Invokation von pub.client:http auf dem IS,
+        // nur wenn IS erreichbar war (kein IOException) aber reachable=false lieferte
+        if (!http.reachable && primaryHttpError == null) {
+            String primaryError = http.errorMsg;
+            debugMsg("[HTTP-DEBUG] IS HTTP Fallback via /invoke/pub.client:http " + urlStr
+                    + " — primärer Check fehlgeschlagen: " + primaryError);
+            try {
+                String json = callPubClientHttp(urlStr);
+                HttpProbeResult fallback = parsePubClientHttpResponse(json, urlStr);
+                if (fallback.reachable) {
+                    debugMsg("[HTTP-DEBUG] IS HTTP Fallback " + urlStr + " → Status " + fallback.status);
+                } else {
+                    debugMsg("[HTTP-DEBUG] IS HTTP Fallback " + urlStr
+                            + " → FAIL (" + fallback.errorMsg + ")");
+                    fallback = new HttpProbeResult(urlStr, 0, false,
+                            "primary: " + primaryError + "; fallback: " + fallback.errorMsg);
+                }
+                http = fallback;
+            } catch (IOException e) {
+                debugMsg("[HTTP-DEBUG] IS HTTP Fallback " + urlStr + " → FAIL (" + e.getMessage() + ")");
+                http = new HttpProbeResult(urlStr, 0, false,
+                        "primary: " + primaryError + "; fallback: " + e.getMessage());
+            }
+        }
 
         boolean reachable = tcp.open || http.reachable;
         return new EndpointCheckResult(apiName, apiVersion, null, http.url,
@@ -194,6 +225,19 @@ public class IsEndpointCheckService {
      */
     String callHttpEndpoint(String endpointUrl) throws IOException {
         String fullUrl = config.buildBaseUrl() + "/http?url=" + encodeQueryParam(endpointUrl);
+        return callIsEndpoint(fullUrl);
+    }
+
+    /**
+     * Calls {@code GET /invoke/pub.client:http?url={encodedUrl}&method=GET} on the IS
+     * and returns the raw JSON body.
+     * This is the native IS service invocation — used as a fallback when the RAD
+     * {@code checkHttp} flow reports {@code reachable=false}.
+     */
+    String callPubClientHttp(String endpointUrl) throws IOException {
+        String fullUrl = config.buildInvokeUrl("pub.client:http")
+                + "?url=" + encodeQueryParam(endpointUrl)
+                + "&method=GET";
         return callIsEndpoint(fullUrl);
     }
 
@@ -368,6 +412,30 @@ public class IsEndpointCheckService {
         boolean reachable= "true".equalsIgnoreCase(f.getOrDefault("reachable", "false"));
         String  errorMsg = f.getOrDefault("error_msg",    "");
         return new HttpProbeResult(url, status, reachable, errorMsg);
+    }
+
+    /**
+     * Parses the JSON body returned by {@code GET /invoke/pub.client:http} into an
+     * {@link HttpProbeResult}.
+     *
+     * <p>Expected fields: {@code status} (HTTP status code as string),
+     * {@code statusMessage} (e.g. {@code "OK"})</p>
+     */
+    HttpProbeResult parsePubClientHttpResponse(String json, String fallbackUrl) {
+        if (json == null || json.isEmpty()) {
+            return new HttpProbeResult(fallbackUrl, 0, false, "pub.client:http returned empty response");
+        }
+        // status and statusMessage are nested inside the "header":{…} object —
+        // parse only that block to avoid accidental key collisions with top-level fields
+        Matcher headerBlock = JSON_HEADER_BLOCK.matcher(json);
+        java.util.Map<String, String> f = headerBlock.find()
+                ? parseJsonStrings(headerBlock.group(1))
+                : parseJsonStrings(json); // fallback: flat parse if structure differs
+        int     status    = parseInt(f.getOrDefault("status", "0"), 0);
+        boolean reachable = status > 0;
+        String  errorMsg  = reachable ? ""
+                : "pub.client:http: " + f.getOrDefault("statusMessage", "request failed");
+        return new HttpProbeResult(fallbackUrl, status, reachable, errorMsg);
     }
 
     /**
