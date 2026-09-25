@@ -46,9 +46,9 @@ public class IsEndpointCheckService {
     private static final Pattern JSON_STRING =
             Pattern.compile("\"([^\"]+)\"\\s*:\\s*\"([^\"]*)\"");
 
-    /** Matches the value of a top-level {@code "header":{…}} object in a JSON string. */
-    private static final Pattern JSON_HEADER_BLOCK =
-            Pattern.compile("\"header\"\\s*:\\s*\\{([^}]*)\\}");
+    /** Matches the opening of a {@code "header":{ } sequence in a JSON string. */
+    private static final Pattern JSON_HEADER_START =
+            Pattern.compile("\"header\"\\s*:\\s*\\{");
 
     private final IsEndpointCheckConfig config;
     private final HttpDebugConfig httpDebugConfig;
@@ -426,10 +426,11 @@ public class IsEndpointCheckService {
             return new HttpProbeResult(fallbackUrl, 0, false, "pub.client:http returned empty response");
         }
         // status and statusMessage are nested inside the "header":{…} object —
-        // parse only that block to avoid accidental key collisions with top-level fields
-        Matcher headerBlock = JSON_HEADER_BLOCK.matcher(json);
-        java.util.Map<String, String> f = headerBlock.find()
-                ? parseJsonStrings(headerBlock.group(1))
+        // parse only that block to avoid accidental key collisions with top-level fields.
+        // Use a brace counter because the header block may contain nested objects (e.g. "lines":{…}).
+        String headerContent = extractHeaderBlock(json);
+        java.util.Map<String, String> f = headerContent != null
+                ? parseJsonStrings(headerContent)
                 : parseJsonStrings(json); // fallback: flat parse if structure differs
         int     status    = parseInt(f.getOrDefault("status", "0"), 0);
         boolean reachable = status > 0;
@@ -450,6 +451,29 @@ public class IsEndpointCheckService {
         java.util.Map<String, String> f = parseJsonStrings(json);
         String ip = f.get("resolved_ip");
         return (ip != null && !ip.isEmpty()) ? ip : null;
+    }
+
+    /**
+     * Extracts the content of the {@code "header":{…}} block from a
+     * {@code /invoke/pub.client:http} response, correctly handling nested objects
+     * (e.g. the {@code "lines":{…}} sub-object) by counting braces.
+     *
+     * @return the string content between the outer braces of the header block,
+     *         or {@code null} if no {@code "header":} key is found
+     */
+    private static String extractHeaderBlock(String json) {
+        Matcher m = JSON_HEADER_START.matcher(json);
+        if (!m.find()) return null;
+        int depth = 1;
+        int i = m.end(); // position just after the opening '{'
+        while (i < json.length() && depth > 0) {
+            char c = json.charAt(i);
+            if (c == '{') depth++;
+            else if (c == '}') depth--;
+            i++;
+        }
+        // i points one past the closing '}'; extract content between the braces
+        return depth == 0 ? json.substring(m.end(), i - 1) : null;
     }
 
     private static java.util.Map<String, String> parseJsonStrings(String json) {

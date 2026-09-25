@@ -491,6 +491,24 @@ class IsEndpointCheckServiceTest {
     }
 
     @Test
+    void parsePubClientHttpResponse_nestedLinesInHeader_status200() {
+        // echte IS-Response: header enthält verschachteltes lines{}-Objekt —
+        // JSON_HEADER_BLOCK-Regex [^}]* würde beim ersten } stoppen und status nicht finden
+        String json = "{\"url\":\"https://tsam-webservice.els.oebb.at\",\"method\":\"GET\","
+                + "\"header\":{"
+                + "\"lines\":{\"Content-Type\":\"text/html\",\"Content-Length\":\"453\"},"
+                + "\"status\":\"200\","
+                + "\"statusMessage\":\"OK\""
+                + "},"
+                + "\"body\":{\"bytes\":\"abc\"}}";
+        IsEndpointCheckService.HttpProbeResult r =
+                service.parsePubClientHttpResponse(json, "https://tsam-webservice.els.oebb.at");
+        assertEquals(200, r.status);
+        assertTrue(r.reachable);
+        assertEquals("", r.errorMsg);
+    }
+
+    @Test
     void parsePubClientHttpResponse_status401_reachableTrue() {
         // Jeder HTTP-Status > 0 bedeutet reachable=true
         String json = "{\"url\":\"https://host.example.com\",\"method\":\"GET\","
