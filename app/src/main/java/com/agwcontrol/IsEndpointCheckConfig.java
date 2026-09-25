@@ -83,6 +83,16 @@ public class IsEndpointCheckConfig {
         return scheme + "://" + host + ":" + port + RAD_BASE_PATH;
     }
 
+    /**
+     * Builds the base URL for a native IS invoke call, e.g.
+     * {@code http://localhost:5555/invoke/pub.client:http}.
+     *
+     * @param service fully qualified IS service name, e.g. {@code "pub.client:http"}
+     */
+    public String buildInvokeUrl(String service) {
+        return scheme + "://" + host + ":" + port + "/invoke/" + service;
+    }
+
     @Override
     public String toString() {
         return scheme + "://" + host + ":" + port + RAD_BASE_PATH;
